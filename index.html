@@ -10,6 +10,26 @@
       body {
         font-family: 'Inter', sans-serif;
       }
+      
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #404040; 
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555555; 
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #404040 transparent;
+      }
     </style>
   <script type="importmap">
 {

@@ -27,6 +27,7 @@ export const generateInfographic = async (
     2. Accuracy: Ensure spelling and grammar are perfect.
     3. Accessibility: The content must be easy to understand for all ages.
     4. Layout: Clear hierarchy, using icons and large text for key points.
+    5. Temporal Context: The current year is 2026. If the topic implies current events or dates, ensure the visual context aligns with the year 2026. Do not use outdated years unless historically relevant.
     ${watermarkInstruction}
     
     Do not produce photorealistic images unless the style specifically requests it. Focus on graphic design, clarity, and the requested aesthetic.
@@ -143,6 +144,8 @@ export const rewriteText = async (text: string): Promise<string> => {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Ты профессиональный редактор. Твоя задача - переписать (сделать рерайт) предоставленного текста на русском языке.
+      
+      Контекст времени: Сейчас 2026 год. Учитывай это при редактировании текста, если в нем упоминаются текущие события, даты или относительное время (например, "в прошлом году", "сейчас").
       
       Требования:
       1. Полностью сохрани исходный смысл и факты.
