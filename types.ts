@@ -3,20 +3,24 @@ export interface GeneratedImage {
   topic: string;
   timestamp: number;
   aspectRatio: string;
+  base64?: string;
+}
+
+export interface InfographicStyle {
+  id: string;
+  label: string;
+  icon: string;
+  prompt: string;
+  isCustom?: boolean;
+}
+
+export interface AIModel {
+  id: string;
+  label: string;
+  model: string;
+  isCustom?: boolean;
 }
 
 export interface ApiError {
   message: string;
-}
-
-// Augment window to include aistudio properties
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
-  interface Window {
-    aistudio?: AIStudio;
-  }
 }

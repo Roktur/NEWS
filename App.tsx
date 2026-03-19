@@ -1,619 +1,728 @@
-import React, { useState, useEffect } from 'react';
-import { generateInfographic, rewriteText, checkApiKeySelection } from './services/geminiService';
+import React, { useState, useCallback, useRef } from 'react';
+import { generateInfographic, rewriteText, DEFAULT_MODELS } from './services/geminiService';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ApiKeyPrompt } from './components/ApiKeyPrompt';
-import { GeneratedImage } from './types';
+import { GeneratedImage, InfographicStyle, AIModel } from './types';
 
-const INFOGRAPHIC_STYLES = [
-  { id: 'may1', label: '1 мая', icon: '🛠️', prompt: 'Professional festive infographic layout for Spring and Labor Day (May 1st). High-quality spring-themed aesthetic featuring fresh blooming flowers, bright green leaves, and festive balloons. Background: Sunny park scenes, clear blue skies, or clean textured paper with subtle floral patterns. Visual elements: Stylized labor symbols (gears, tools) integrated with spring motifs, red banners, and white doves. Color palette: Vibrant red, fresh spring green, sunny yellow, and sky blue. Typography: Bold, cheerful sans-serif fonts for headlines and clean, modern fonts for informational blocks. The overall atmosphere is positive, communal, and celebratory of spring and work. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'march8', label: '8 Марта', icon: '🌷', prompt: 'Professional festive infographic layout for International Women\'s Day (March 8th). High-quality spring-themed aesthetic featuring delicate floral arrangements (tulips, mimosa, lilies) with soft watercolor textures and gentle sunlight effects. Color palette: Soft pastel pinks, creamy whites, fresh spring greens, and sunny yellows. Visual elements include elegant flowing ribbons, subtle sparkle overlays, and stylized "8" motifs integrated into the design. Typography is a graceful and sophisticated script for main greetings and a clean, modern sans-serif for informational blocks. The overall atmosphere is warm, celebratory, appreciative, and elegant, resembling premium greeting cards or high-end lifestyle magazine features. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'victory_day', label: '9 мая', icon: '🎖️', prompt: 'Professional Victory Day (May 9th) infographic layout. High-quality patriotic and solemn aesthetic. Background: Clean white marble, subtle textures of aged paper, or a dignified dark red gradient. Visual elements: St. George ribbon (orange and black stripes), the Eternal Flame, silhouettes of monuments like "The Motherland Calls", red carnations, Soviet stars, and fireworks in the night sky. Color palette: Deep red, gold, black, and orange (St. George ribbon colors). Typography: Strong, dignified serif fonts for headlines and clear sans-serif for informational blocks. The overall atmosphere is respectful, heroic, and celebratory. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'february23', label: '23 февраля', icon: '🇷🇺', prompt: 'Professional festive infographic layout for Defender of the Fatherland Day (February 23rd). High-quality military and patriotic aesthetic. Background: Clean metallic textures, subtle camouflage patterns, or a dignified navy blue/khaki gradient. Visual elements: Stylized stars, military equipment silhouettes (tanks, planes, ships), medals, and the Russian flag colors. Color palette: Khaki green, deep red, navy blue, and gold. Typography: Strong, bold sans-serif or slab-serif fonts that convey strength and reliability. The overall atmosphere is courageous, respectful, and celebratory. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'aviation', label: 'Авиа', icon: '✈️', prompt: 'Professional aviation and airline news infographic layout. High-quality travel aesthetic featuring modern commercial aircraft, clear blue skies, and soft white clouds. Background: Aerial views of landscapes, airport terminal glass reflections, or clean sky gradients. Visual elements: Stylized flight paths, boarding pass motifs, airplane silhouettes, and globe icons. Color palette: Sky blue, cloud white, and professional navy blue with silver accents. Typography: Clean, modern sans-serif fonts (like those used in airports). The overall atmosphere is airy, global, and efficient. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'automotive', label: 'Автомобильный', icon: '🚗', prompt: 'Professional automotive news and tips infographic layout. High-quality aesthetic designed for drivers and car enthusiasts. Background: Clean, modern surfaces like asphalt textures, metallic gradients, or blurred city roads. Visual elements: Realistic car silhouettes, steering wheels, road signs, and clear icons representing traffic rules, maintenance tips, or new laws. Color palette: Trustworthy deep blue, metallic grey, and signal red for alerts. Typography: Bold, legible sans-serif fonts (like those used on road signs or car dashboards). The layout is structured to deliver news, advice, or warnings clearly. The overall atmosphere is informative, practical, and road-focused. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'astrological', label: 'Астро', icon: '✨', prompt: 'Astrological theme, starry night background, golden constellations, zodiac symbols, mystical, ethereal, deep blue and gold color palette.' },
-  { id: 'banking', label: 'Банки', icon: '🏦', prompt: 'Professional banking and financial services infographic layout. High-quality corporate aesthetic featuring modern bank buildings, secure vaults, and digital banking interfaces. Background: Clean glass and steel architectural textures, blurred banking halls, or sophisticated dark blue gradients. Visual elements: Credit cards, gold coins, currency symbols (Ruble, Dollar, Euro), secure padlocks, and growth charts. Color palette: Trustworthy navy blue, professional gold, and crisp white. Typography: Clean, modern sans-serif fonts that convey security and stability. The overall atmosphere is professional, secure, and financially focused. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'biology', label: 'Биология', icon: '🦁', prompt: 'Professional biological and life sciences infographic layout. High-quality scientific aesthetic featuring organic earth tones like forest green, moss, terra cotta, and aged parchment. The background suggests a natural habitat or a clean laboratory notebook. Visual elements include detailed anatomical cross-sections of animals or plants, cellular structures, and botanical illustrations with realistic textures. Incorporates scientific annotations, measurement scales, and magnifying glass callouts. Typography is a mix of elegant serif for classifications and clean, functional sans-serif for data. The overall atmosphere is educational, highly detailed, and organic, resembling high-end scientific journals or National Geographic museum exhibits. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'business_humor', label: 'Бизнес с юмором', icon: '😉', prompt: 'Modern professional business infographic with a touch of visual wit. A clean, corporate aesthetic that isn\'t boring. Background: Minimalist white or light grey with subtle geometric patterns. Color palette: Trustworthy navy and slate grey paired with energetic accents of coral, mint, or mustard yellow. Visual elements: High-quality vector-style illustrations that use clever visual metaphors or slight exaggeration to make business concepts relatable and engaging (e.g., a chart growing into a tree, a coffee cup fueling a rocket). The humor should be smart and subtle, not cartoonish. Typography: Crisp, modern sans-serif fonts. Layout: Structured and data-driven but with a friendly, approachable vibe. All text in the image MUST be in Russian (Русский язык). CRITICAL: DO NOT INCLUDE GENERIC TITLES LIKE "EDUCATIONAL INFOGRAPHIC" or "ОБРАЗОВАТЕЛЬНАЯ ИНФОГРАФИКА". Just the topic headline and content.' },
-  { id: 'breaking_news', label: 'Важная новость', icon: '🚨', prompt: 'Professional breaking news television broadcast graphic. Vivid red, white, and deep navy color palette. A massive, high-contrast "СРОЧНЫЕ НОВОСТИ" (Breaking News) banner at the top with a glowing alert effect. The layout mimics a modern news channel interface with a clear hierarchy. Main area features bold, impactful headlines. Background incorporates abstract digital textures and a subtle global map grid. Includes a realistic "LIVE" indicator icon and a scrolling news ticker aesthetic at the bottom. Sharp, clean sans-serif typography. Professional, urgent, and authoritative journalistic atmosphere. All text MUST be in Russian.' },
-  { id: 'fun', label: 'Веселая', icon: '🎈', prompt: 'Fun and playful, bright vibrant colors, rounded shapes, cute characters, comic book style, energetic and friendly, bubbly fonts.' },
-  { id: 'government', label: 'Власть', icon: '🏛️', prompt: 'Professional Russian government and political news infographic layout. Official, authoritative, and patriotic aesthetic designed for news about the State Duma, officials, and civil servants. Background: Clean white, marble textures, or subtle gradients of the Russian tricolor (White, Blue, Red). Visual elements: The Russian Coat of Arms (Double-headed eagle), the State Duma building silhouette, microphones on podiums, official documents, and the Russian flag. Color palette: Official state colors (White, Blue, Red) with Gold accents for prestige and Dark Navy for seriousness. Typography: Dignified serif fonts (like those on official decrees) and clear, bold sans-serif for headlines. The overall atmosphere is formal, serious, and administrative. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'gibdd', label: 'ГИБДД', icon: '🚓', prompt: 'Professional Russian traffic safety (GIBDD) infographic layout. Official and authoritative aesthetic featuring the signature color palette of police blue, crisp white, and reflective high-visibility neon yellow. The background incorporates stylized asphalt textures with white road markings or a clean official administrative document look. Visual elements include iconic Russian road signs, stylized police vehicle silhouettes with glowing emergency lights, and traffic safety diagrams. Typography is bold, modern, and high-contrast, mimicking official safety bulletins and instructional posters for drivers. Clear informational hierarchy with dedicated sections for rules, warnings, and safety tips. The overall atmosphere is serious, authoritative, and focused on road safety and public order. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'city', label: 'Город', icon: '🏙️', prompt: 'Professional urban development and city news infographic layout. Modern, dynamic, and structured aesthetic. Background: Clean architectural blueprints, stylized city maps, or blurred urban landscapes with modern buildings. Visual elements: High-quality icons and illustrations representing construction cranes (🏗️), modern roads (🛣️), roadwork barriers (🚧), traffic lights (🚦), bicycles and scooters (🚴), and parking symbols (🅿️). Color palette: Urban grey, construction orange, asphalt black, and signal yellow, balanced with clean white. Typography: Bold, modern sans-serif fonts that mimic city signage and technical documentation. The overall atmosphere is active, developing, and informative. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'gost', label: 'ГОСТ', icon: '📐', prompt: 'Professional technical and official infographic layout for GOST (State Standard) news and updates. High-quality bureaucratic and engineering aesthetic. Background: Clean blueprint paper, technical grid lines, or official document textures with subtle watermarks. Visual elements: Official GOST stamps, quality mark symbols (Знак качества), technical drawings, measuring instruments (calipers, rulers), and structured data tables. Color palette: Strict and official navy blue, technical drawing blue, crisp white, and stamp red. Typography: Monospaced or highly legible, strict sans-serif fonts resembling technical documentation and official state papers. The overall atmosphere is precise, authoritative, standardized, and informative. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'gosuslugi', label: 'Госуслуги', icon: '📱', prompt: 'Professional Russian public services (Gosuslugi) infographic layout. Modern, clean, and user-friendly digital service aesthetic. Background: Clean white or light grey with subtle geometric patterns or soft blue gradients. Visual elements: Stylized icons representing various public services (passports, family, health, education, taxes), smartphone interfaces, and the recognizable Gosuslugi blue and red accent colors. Color palette: Gosuslugi blue (#0055A4), crisp white, and subtle red accents. Typography: Modern, highly legible sans-serif fonts (like those used on the Gosuslugi portal). The overall atmosphere is efficient, helpful, and modern. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'gto', label: 'ГТО', icon: '🏅', prompt: 'Professional "Ready for Labour and Defence" (GTO) infographic layout. Athletic, energetic, and patriotic aesthetic designed to promote physical fitness standards. Background: Clean white or dynamic red geometric shapes, stadium tracks, or subtle texture of sportswear mesh. Color palette: Bright Red, Pure White, and Gold/Silver/Bronze accents (reflecting the badges). Visual elements: Stylized GTO badges, silhouettes of athletes performing tests (running, pull-ups, swimming, shooting), stopwatches, and laurel wreaths. Typography: Strong, bold, uppercase sans-serif fonts that convey strength and discipline. The overall atmosphere is motivating, active, and official. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'business', label: 'Деловой', icon: '💼', prompt: 'Corporate business style, professional and clean, office aesthetic, structured layout, neutral color palette (navy blue, grey, white), serious and trustworthy.' },
-  { id: 'doodle', label: 'Дудл', icon: '✏️', prompt: 'Hand-drawn doodle style, whiteboard sketch aesthetic, marker lines, informal, creative, loose and artistic, sketchbook feel.' },
-  { id: 'food', label: 'Еда', icon: '🍳', prompt: 'Professional culinary and food infographic layout. High-quality aesthetic featuring appetizing food photography or realistic illustrations. Background: Clean kitchen counter textures (marble, wood) or fresh pastel colors. Color palette: Warm, appetizing tones (orange, red, fresh green, golden brown). Visual elements: Fresh ingredients, cooking utensils, steam effects, and nutritional breakdown charts. Typography: Elegant serif for headings (like a menu) and clean sans-serif for instructions. The overall atmosphere is delicious, fresh, and inviting. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'animals', label: 'Животные', icon: '🐾', prompt: 'Professional wildlife and animal facts infographic layout. High-quality nature documentary aesthetic. Background: Blurred natural habitats (forest, jungle, savanna, ocean) or clean textured paper. Visual elements: Stunning, high-resolution realistic photos or hyper-realistic illustrations of the specific animal mentioned in the topic. The layout should highlight key facts with icons (paw prints, speed, diet symbols). Color palette: Earthy tones, vibrant nature colors depending on the animal (e.g., ocean blues for marine life, forest greens for woodland creatures). Typography: Bold, attention-grabbing headers (like a wildlife magazine) and clear, readable body text for facts. The overall atmosphere is educational, fascinating, and wild. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'zhkh', label: 'ЖКХ', icon: '🏘️', prompt: 'Professional Russian Housing and Communal Services (ZhKH) infographic layout. Official and administrative aesthetic featuring a clean, structured design typical of public utility notices. Background: Clean white or light blue grid with subtle watermarks of houses or gears. Color palette: Official blue, bright safety orange (for alerts), and practical grey. Visual elements: High-contrast icons representing utilities (faucets, radiators, lightbulbs, trash bins, tools). Layout mimics an official maintenance announcement or utility bill explanation. Typography: Bold, strict, and highly legible sans-serif fonts. The overall atmosphere is informative, serious, and communal. All text in the image MUST be in Russian (Русский язык). CRITICAL: DO NOT INCLUDE ANY DATES, YEARS, OR MONTHS. DO NOT ADD GENERIC TITLES LIKE "ЖКХ ИНФОРМ", "HOUSING NEWS", or "ANNOUNCEMENT". Just the topic headline and information.' },
-  { id: 'mysterious', label: 'Загадочная', icon: '🕵️', prompt: 'Mysterious atmosphere, dark background, glowing neon elements, shadows, fog, deep purples and blues, enigmatic symbols, thriller aesthetic.' },
-  { id: 'salary_pension', label: 'Зарплата и пенсия', icon: '💰', prompt: 'Professional financial news infographic layout about salaries and pensions in Russia. High-quality aesthetic focused on labor compensation, social benefits, and economic news. Background: Clean financial charts, office settings, or subtle currency textures. Visual elements: Icons representing money (💰), pension funds, salary slips, and professional growth. Color palette: Trustworthy navy blue, professional green, and clean white. Typography: Bold, authoritative sans-serif fonts. The overall atmosphere is informative, serious, and reliable. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'health', label: 'Здоровье', icon: '❤️', prompt: 'Professional health and wellness infographic layout. Focused on vitality, self-care, and healthy lifestyle. Aesthetic: Clean, fresh, organic, and positive. Color palette: Fresh greens (nature), soft blues (calm), and energetic oranges (vitality) on a clean white background. Visual elements: Icons representing healthy habits (fitness, nutrition, sleep, hydration), human silhouettes in active poses, and heart symbols. Typography: Modern, clean, and friendly sans-serif fonts. The overall atmosphere is motivating and life-affirming. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'ai_news', label: 'ИИ', icon: '🤖', prompt: 'Friendly and accessible high-tech infographic layout for Artificial Intelligence (AI) news. The visual style is modern, approachable, and human-centric, designed to be clear and non-intimidating for all ages (including seniors). Background: Soft gradients, clean white spaces, and gentle light effects in calming blues, soft greens, and warm neutral tones. Visual elements: Friendly AI assistants, clear and simple icons representing technology as a helpful tool, and human-technology collaboration. CRITICAL: AVOID scary or overly complex cybernetic imagery like glowing brains, dark neural networks, or aggressive neon colors. THE IMAGE CONTENT MUST DIRECTLY REFLECT AND ILLUSTRATE THE SPECIFIC NEWS TOPIC PROVIDED in a supportive and clear way. Typography: Clean, highly legible modern sans-serif fonts. The overall atmosphere is helpful, safe, and easy to understand. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'fact', label: 'Интересный факт', icon: '💡', prompt: 'Professional curiosity-driven "Did you know?" infographic layout. High-quality modern graphic aesthetic with a vibrant and engaging color palette featuring electric yellow, bright teal, and energetic orange. The background is clean and slightly textured with subtle geometric patterns or curiosity-themed icons like lightbulbs, magnifying glasses, and sparks of inspiration. Visual elements include a massive, stylish "?" or "!" mark and clean, segmented blocks for the fact content. Incorporates high-contrast flat illustrations or sleek 3D icons that represent the discovery of new information. Typography is a bold, friendly sans-serif for the main hook and a clear, modern font for the body text. The overall atmosphere is educational, surprising, and visually stimulating, resembling high-end educational social media cards or museum discovery panels. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'internet', label: 'Интернет', icon: '🌐', prompt: 'Professional Internet and Digital Web infographic layout. Modern UI/UX aesthetic featuring browser windows, search bars, and floating app icons. Background: Abstract digital network, fiber optic lines, or a clean "glassmorphism" interface. Color palette: Electric blue, cyber violet, and bright neon accents against a dark "night mode" or clean white background. Visual elements: Wi-Fi signals, cloud symbols, cursor arrows, and chat bubbles. Typography: Modern web-optimized sans-serif fonts (like Inter or Roboto) and monospace accents. The overall atmosphere is connected, fast, and technological. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'historical', label: 'Исторический', icon: '📜', prompt: 'Professional historical infographic layout. Aesthetic inspired by vintage maps, old manuscripts, and classical history books. Background: Aged parchment texture, papyrus, or faded canvas with subtle map grids or compass roses. Color palette: Sepia, antique gold, faded brown, and deep crimson accents. Visual elements: Wax seals, quill pen illustrations, etching-style drawings, and timeline markers. Typography: Classic serif fonts (like Garamond or Trajan) for headers and clean, legible serif for body text. The overall atmosphere is timeless, educational, and authentic. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'cybersecurity', label: 'Кибербезопасность', icon: '🛡️', prompt: 'Professional cybersecurity and digital safety infographic layout. High-tech, secure aesthetic. Background: Dark matrix-style digital rain, circuit board patterns, or deep navy/black void with glowing grid lines. Color palette: Neon green (hacker style), electric blue, and warning red accents on a dark background. Visual elements: Padlocks, shields, binary code streams, fingerprints, and firewall brick wall motifs. Typography: Monospace "terminal" fonts for code snippets and bold, futuristic sans-serif for headers. The overall atmosphere is secure, vigilant, and technological. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'space', label: 'Космос', icon: '🚀', prompt: 'Professional astronomical and deep space infographic layout. High-quality scientific aesthetic featuring stunning cinematic nebulae, dense starfields, and celestial bodies like planets or distant galaxies with realistic textures and atmospheric glows. The background is a deep indigo and midnight purple void with vibrant electric blue and magenta nebular clouds. Visual elements include futuristic data visualization overlays, glowing scientific coordinate grids, and detailed planetary cross-sections. Typography is a sophisticated tech-style sans-serif, mimicking advanced space agency mission control interfaces or high-end astronomical documentary visuals. Clear informational hierarchy with luminous callouts and floating data blocks. The overall atmosphere is awe-inspiring, mysterious, and highly scientific. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'culture', label: 'Культура', icon: '🎨', prompt: 'Professional news infographic layout for culture and arts. Calm, balanced, and informative aesthetic. Background: Clean off-white, light grey, or subtle paper texture. Visual elements: Minimalist and professional icons representing cinema, books, fine arts, theater, and cultural events. Color palette: Muted and sophisticated tones like deep navy, slate grey, and soft burgundy on a neutral background. Typography: Classic, highly legible serif for headlines and clean sans-serif for body text, conveying a sense of tradition and credibility. The overall atmosphere is serious, respectful, and purely news-focused. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'medical', label: 'Медицинский', icon: '🏥', prompt: 'Professional medical infographic, clean clinical white background, blue and teal accents, anatomy illustrations, health symbols (cross, heart, stethoscope), sterile and trustworthy.' },
-  { id: 'messenger_max', label: 'Мессенджер MAX', icon: '💬', prompt: 'Professional news infographic layout for "Messenger MAX" updates. High-quality corporate news aesthetic. CRITICAL: DO NOT INCLUDE CHAT BUBBLES, MESSAGES, OR CONVERSATION INTERFACES. This is a news report, not a screenshot of the app. Background: A "light" style featuring bright, vibrant glowing gradients of electric blue, violet, and magenta. Visual elements: Prominently features the "Messenger MAX" logo—a thick, flat white circular ring with a small speech bubble tail at the bottom left, set inside a rounded, slightly tilted square container with a smooth gradient from electric blue to deep purple. The layout uses clean white or translucent glass panels to display news content. Typography: Sharp, modern sans-serif fonts. The atmosphere is technological, energetic, and premium. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'weather', label: 'Метео', icon: '🌦️', prompt: 'Weather and health forecast theme, meteorological charts, atmospheric pressure visualization, icons of sun/clouds/rain, soothing colors, clear data about weather impact on health.' },
-  { id: 'metro', label: 'Метро', icon: '🚇', prompt: 'Professional public transport and subway news infographic layout, specifically inspired by the Moscow Metro. High-quality urban transit aesthetic. Background: Clean architectural elements of metro stations, marble textures, or sleek modern train carriages. Visual elements: Iconic red "M" logo style, subway maps, transit lines, turnstiles, and modern train silhouettes. Color palette: Deep underground darks, bright station lights, and vibrant line colors (red, blue, green, circle line brown). Typography: Clean, highly legible sans-serif fonts used in transit navigation and wayfinding systems. The overall atmosphere is dynamic, punctual, and metropolitan. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'world', label: 'Мир', icon: '🌍', prompt: 'Hyper-expressive 3D render style, viral YouTube thumbnail aesthetic. Highly exaggerated and dramatic facial expressions that strictly MATCH the emotional tone of the topic (e.g., joy, huge smiles, and delight for positive news; anxiety, fear, and worry for alarming news; or shock, surprise, and wide eyes for unexpected events). Vibrant, highly saturated colors with cinematic, dramatic lighting. Chaotic, dynamic composition with multiple storytelling elements in the foreground and background. Integrate text naturally into the scene objects (e.g., written on mugs, sticky notes, computer screens, maps, or signs). The overall atmosphere is high-energy and clickbait-style dramatic, adapting its mood (humorous, joyful, or alarming) based on the topic. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'minimal', label: 'Минимализм', icon: '⚪', prompt: 'Minimalist design, plenty of whitespace, simple geometric shapes, limited color palette, clean lines, Swiss design style, modern.' },
-  { id: 'scam', label: 'Мошенники', icon: '🎭', prompt: 'Professional anti-fraud warning infographic layout. Urgent and cautionary aesthetic designed to alert the public about scams. Color palette: High-contrast red, black, and alarm yellow against a dark or neutral grey background. Visual elements: Icons of hooded figures, hackers, locked phones, phishing hooks, credit cards with prohibition signs, and shield symbols. Typography: Bold, impact-style headers (resembling "ATTENTION" or "STOP") and clear, legible body text for safety tips. The layout mimics official police warnings or bank security alerts. The overall atmosphere is serious, protective, and urgent. All text in the image MUST be in Russian (Русский язык). CRITICAL: DO NOT INCLUDE ANY DATES.' },
-  { id: 'musical', label: 'Музыкальный', icon: '🎵', prompt: 'Professional artistic musical infographic layout. The composition is driven by dynamic sound waves, flowing staff lines, and abstract musical notes that create a sense of rhythm and harmony. Incorporates sleek silhouettes of instruments like violins, pianos, or guitars in a modern graphic style. Color palette: Deep indigo background with glowing neon accents of magenta, teal, and gold. High-contrast typography resembling elegant album covers or high-end music magazine spreads. Clear informational hierarchy with large, stylish headlines. The overall atmosphere is sophisticated, creative, and energetic. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'mchs', label: 'МЧС', icon: '🚒', prompt: 'Professional emergency warning and safety instructions infographic layout. Official Ministry of Emergency Situations (MCHS) aesthetic. Background: Clean white or high-visibility textures with subtle diagonal warning stripes. Visual elements: Official emergency symbols, fire trucks, rescue equipment, warning triangles, and clear step-by-step instructional icons (what to do in an emergency). Color palette: High-contrast emergency orange, alert red, and official navy blue. Typography: Bold, highly legible, and authoritative sans-serif fonts designed for quick reading in stressful situations. The layout is structured to deliver critical safety information, warnings, and action steps clearly. The overall atmosphere is urgent, life-saving, and official. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'newyear', label: 'Новогодний', icon: '🎄', prompt: 'New Year and Christmas theme, festive decoration, snowflakes, gold and red colors, cozy winter atmosphere, holiday spirit, magical lighting, sparkles.' },
-  { id: 'news', label: 'Новостная', icon: '📰', prompt: 'Professional classic newspaper and digital news portal hybrid layout. High-quality journalistic aesthetic with a structured multi-column grid. Clean, authoritative serif typography for main headlines and sharp sans-serif for body text. Color palette: Off-white parchment or clean white background with black ink text and professional red accents for key alerts or categories. Incorporates realistic paper grain or a sophisticated digital news interface texture. Clear informational hierarchy with prominent headers, dots, and "Exclusive" badges. The overall atmosphere is credible, serious, and informative, mimicking high-end international newspapers. All text in the image MUST be in Russian (Русский язык). CRITICAL: DO NOT INCLUDE ANY DATES, YEARS, OR MONTHS. DO NOT ADD GENERIC NEWSPAPER NAMES OR HEADERS LIKE "ОФИЦИАЛЬНЫЙ ВЕСТНИК", "GAZETA", "NEWS", "OFFICIAL GAZETTE". Just the topic headline and content.' },
-  { id: 'nostalgia', label: 'Ностальгия', icon: '🎞️', prompt: 'Professional nostalgic infographic layout. High-quality aesthetic evoking warm memories and a sense of the past. Background: Soft, warm sepia tones, faded photographs with blurred edges, or vintage wallpaper textures. Visual elements: Classic objects from past decades (analog clocks, old cameras, handwritten letters, retro toys). Color palette: Muted, warm earth tones, dusty rose, and antique gold. Typography: Elegant, slightly weathered serif fonts and graceful cursive scripts. The overall atmosphere is sentimental, cozy, and reflective. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'education', label: 'Образование', icon: '🎓', prompt: 'Professional educational and academic news infographic layout. High-quality aesthetic featuring elements of higher education, universities, and lifelong learning. Background: Clean campus architecture, library shelves, or modern lecture halls with soft lighting. Visual elements: Graduation caps, diplomas, open books, digital tablets, and lightbulb icons representing new ideas. Color palette: Academic navy blue, deep forest green, and sophisticated gold accents on a clean white or light grey background. Typography: Elegant serif for headers (conveying tradition and authority) and clean, modern sans-serif for body text. The overall atmosphere is intellectual, inspiring, and professional. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'weather_pixar', label: 'Погода', icon: '☀️', prompt: 'Professional weather infographic in a charming Pixar and Disney animation style. High-quality 3D render aesthetic with soft, warm lighting and expressive, friendly characters. The atmosphere is extremely positive, sunny, and cheerful. Background: A beautiful, vibrant sky with fluffy, stylized white clouds and a glowing, smiling sun. Visual elements: Cute 3D weather icons (smiling raindrops, fluffy snow, golden sunbeams) with a tactile, toy-like texture. The layout is clean and organized. CRITICAL: DO NOT INCLUDE ANY NUMBERS, TEMPERATURES, DATES, OR YEARS UNLESS THEY ARE EXPLICITLY PROVIDED IN THE TOPIC. IF NO NUMBERS ARE PROVIDED, THE IMAGE MUST BE COMPLETELY FREE OF ANY NUMERICAL DATA. Typography: Friendly, rounded, and bold sans-serif fonts. The overall feel is magical, heartwarming, and full of joy. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'generations', label: 'Поколение', icon: '👥', prompt: 'Professional infographic layout about generational differences and news (Boomers, Gen X, Millennials, Gen Z, Gen Alpha). High-quality modern aesthetic featuring a diverse group of people representing different age groups in a clean, graphic style. Background: A dynamic split-screen or multi-panel layout with distinct color zones for each generation (e.g., retro orange for Boomers, neon violet for Gen Z). Visual elements: Iconic objects representing each era (vinyl records, early computers, smartphones, VR headsets). Color palette: A vibrant, multi-colored spectrum that feels inclusive and energetic. Typography: A mix of fonts that reflect different eras—classic serif for older generations and bold, futuristic sans-serif for younger ones. The overall atmosphere is comparative, insightful, and culturally relevant. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'holidays', label: 'Праздники', icon: '🎉', prompt: 'Professional festive infographic layout for holidays. The AI MUST analyze the provided text to determine the specific holiday being discussed (e.g., New Year, Halloween, Valentine\'s Day, local festivals, etc.) and dynamically adapt the entire visual aesthetic, color palette, and iconography to match that specific holiday\'s traditional theme. Background: Thematic textures and colors appropriate for the identified holiday. Visual elements: High-quality, culturally accurate symbols and decorations related to the specific holiday mentioned in the text. Typography: Festive and thematic fonts that match the holiday\'s mood while remaining highly legible for informational blocks. The overall atmosphere must perfectly capture the spirit of the specific holiday described. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'products', label: 'Продукты', icon: '🛒', prompt: 'Professional consumer news infographic layout about grocery products and retail. High-quality aesthetic featuring supermarket shelves, product packaging, and fresh market displays. Background: Clean, bright store lighting, blurred supermarket aisles, or clean white/light grey surfaces. Visual elements: Realistic images of packaged goods (bottles, boxes, cans), fresh produce (fruits, vegetables), barcodes, quality seals (GOST, organic), and shopping carts. Color palette: Trustworthy consumer colors like fresh green, bright red (for discounts/alerts), and clean white. Typography: Clear, legible sans-serif fonts resembling price tags or product labels. The overall atmosphere is informative, consumer-focused, and practical. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'psychological', label: 'Психологический', icon: '🧠', prompt: 'Psychological and mental health theme, soft pastel colors, brain and mind symbols, human silhouettes, calming aesthetic, clean lines, empathetic and thoughtful visual hierarchy, soothing gradients.' },
-  { id: 'retro', label: 'Ретро', icon: '📺', prompt: 'Retro vintage style, 1950s poster aesthetic, barrier paper texture, muted colors, grain effect, old-school typography, nostalgia.' },
-  { id: 'recipes', label: 'Рецепты блюд', icon: '📖', prompt: 'Professional culinary recipe infographic layout. High-quality home-cooking aesthetic featuring a clear, step-by-step structure. Background: Warm and cozy kitchen textures like light wood, rustic linen, or soft pastel kitchen tiles. Visual elements: High-quality illustrations or realistic photos of the finished dish, fresh ingredients, and simple icons for cooking steps (mixing, baking, cutting). The layout is divided into a clear "Ingredients" list and a numbered "Steps" section. Color palette: Warm and appetizing tones like terracotta, sage green, and creamy vanilla. Typography: A mix of friendly, hand-written style for headers and clean, easy-to-read sans-serif for the instructions. The overall atmosphere is helpful, inspiring, and delicious. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'parents_children', label: 'Родители и дети', icon: '👪', prompt: 'Cinematic emotional storytelling scene about parenting, intimate family moment, parent and child bonding, authentic emotions, tender interaction (hug, eye contact, reassurance), warm storytelling composition, soft volumetric lighting, golden hour sunlight, subtle light rays, pastel warm tones, muted color grading, minimalistic environment, blurred background, focus on characters, natural gestures, human-centered narrative, атмосферная глубина, editorial illustration mixed with soft realism, premium modern design, dribbble / behance trending style, highly detailed textures, soft shadows, film-like color grading, shallow depth of field, emotional mood, calm and safe feeling, clean composition, visual hierarchy for infographic, 4k, ultra quality. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'gardening', label: 'Садоводство', icon: '🌱', prompt: 'Professional gardening and horticulture infographic layout. Natural and organic aesthetic featuring lush greenery, soil textures, and botanical illustrations. Background: Soft garden scenes, wooden textures, or clean parchment. Visual elements: High-quality images of plants, flowers, gardening tools (trowel, watering can), and growth stages. Color palette: Various shades of green, earthy browns, and vibrant floral accents. Typography: Rustic serif for headers and clean sans-serif for tips. The overall atmosphere is peaceful, growth-oriented, and practical. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'telecom', label: 'Связь', icon: '📶', prompt: 'Professional telecommunications and mobile network news infographic layout. High-tech, connected aesthetic featuring cell towers, satellite signals, smartphones, and glowing network nodes. Background: Clean modern gradients of digital blue, vibrant purple, or sleek dark mode with abstract data waves and connectivity lines. Visual elements: 5G/4G icons, Wi-Fi signals, SIM cards, fiber optic cables, and global network maps. Color palette: Electric blue, neon cyan, and magenta accents. Typography: Modern, crisp sans-serif fonts optimized for digital reading. The overall atmosphere is fast, reliable, and technologically advanced. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'social', label: 'Социальный', icon: '🤝', prompt: 'Social awareness theme, flat illustration style showing diverse people, community connections, warm inviting colors, speech bubbles, humanitarian and supportive aesthetic.' },
-  { id: 'sports', label: 'Спорт', icon: '⚽', prompt: 'Professional sports news infographic layout. High-energy, dynamic aesthetic featuring stadium lights, athletic textures (turf, court, track), and motion blur effects. Background: Blurred stadium crowds, sports arena architecture, or clean geometric patterns with action lines. Visual elements: Stylized silhouettes of athletes in motion, stopwatches, scoreboards, and equipment icons (balls, rackets, medals). Color palette: High-contrast energetic colors like electric blue, vibrant orange, or stadium green with crisp white and black accents. Typography: Bold, italicized sans-serif fonts that convey speed and power. The overall atmosphere is exciting, competitive, and fast-paced. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'tech', label: 'Технологии', icon: '🚀', prompt: 'Professional general technology and innovation infographic layout. Futuristic and cutting-edge aesthetic featuring digital networks, artificial intelligence motifs, and sleek hardware. Background: Deep space blue or dark slate with glowing data streams, holographic overlays, and abstract geometric patterns. Visual elements: AI brain silhouettes, microchips, glowing connection lines, robots, and futuristic cityscapes. Color palette: Electric blue, neon purple, and clean white accents. Typography: Modern, bold sans-serif fonts that convey innovation and progress. The overall atmosphere is visionary, high-tech, and inspiring. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'goods', label: 'Товары', icon: '🛍️', prompt: 'Professional consumer goods and retail infographic layout. High-quality aesthetic featuring a variety of household products, electronics, clothing, and everyday items. Background: Clean retail environment, modern store shelves, or a minimalist studio setting with soft lighting. Visual elements: Shopping bags, price tags, delivery boxes, and icons representing different product categories. Color palette: Vibrant and trustworthy colors like royal blue, bright orange, and clean white. Typography: Modern, bold sans-serif fonts that are easy to read. The overall atmosphere is commercial, organized, and appealing. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'financial', label: 'Финансовый', icon: '💰', prompt: 'Financial and economic theme, charts, growth arrows, currency symbols, trustworthy blue and green color palette, data visualization focus, professional investment look.' },
-  { id: 'christian', label: 'Христианский', icon: '✝️', prompt: 'Christian aesthetic, traditional religious art style, gold and parchment texture, dignified serif fonts, classic iconography, serene and holy atmosphere, elegant layout with gold accents.' },
-  { id: 'school', label: 'Школьный', icon: '🎒', prompt: 'Professional educational school infographic layout. High-quality academic aesthetic featuring a classic dark green chalkboard or clean mathematical graph paper background. Incorporates realistic chalk textures, hand-drawn educational icons like pencils, rulers, microscopes, and open books. The composition mimics a well-organized blackboard lesson with clear diagrams and structured sections. Color palette: Deep forest green background with white chalk-style text and subtle accents of sunny yellow and wood-brown. Typography includes elegant hand-written chalk-style fonts for headers and clear, legible ink-style sans-serif for informational text. The overall atmosphere is educational, encouraging, and clear. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'fines', label: 'Штрафы', icon: '⚠️', prompt: 'Professional news infographic layout about fines, penalties, and legal restrictions. Authoritative, cautionary, and official aesthetic. Background: Clean white or subtle grey textures with official document patterns or subtle red warning stripes. Visual elements: Official penalty notices, warning signs, stylized documents with stamps, crossed-out symbols, and icons representing various spheres of life (traffic, business, public spaces). Color palette: High-contrast alert red, official navy blue, and stark white. Typography: Strict, bold, and highly legible sans-serif fonts, resembling official government notices or legal warnings. The overall atmosphere is serious, informative, and cautionary. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'ecology', label: 'Экология', icon: '🌍', prompt: 'Professional environmental and ecology infographic layout. High-quality natural and sustainable aesthetic. Background: Lush green forests, clear blue water ripples, or clean recycled paper textures. Visual elements: High-quality icons and illustrations representing the Earth (🌍), recycling symbols (♻️), clean water waves (🌊), dense forests and trees (🌳), and diverse wildlife/fish (🐟). Color palette: Natural greens, deep ocean blues, earthy browns, and clean white. Typography: Modern, clean sans-serif fonts that convey a sense of harmony with nature and responsibility. The overall atmosphere is fresh, vital, and eco-conscious. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'electronics', label: 'Электроника', icon: '🔌', prompt: 'Professional electronics and consumer technology news infographic layout. High-tech, sleek, and modern aesthetic designed for gadget reviews and tech updates. Background: Clean matte black, dark grey, or brushed aluminum textures. Color palette: Electric blue, neon cyan, and metallic silver accents. Visual elements: High-quality realistic renders of smartphones, laptops, microchips, circuit boards, and glowing power symbols. Typography: Modern, geometric sans-serif fonts (like Roboto or Exo). The overall atmosphere is innovative, cutting-edge, and premium. All text in the image MUST be in Russian (Русский язык).' },
-  { id: 'legal', label: 'Юридический', icon: '⚖️', prompt: 'Professional legal and law system infographic layout. Authoritative and formal aesthetic featuring traditional law textures like aged parchment, polished mahogany wood, and gold-embossed details. Visual elements include the scales of justice, a wooden gavel, thick leather-bound law books, and classical architectural motifs like marble pillars. Color palette: Deep navy blue and charcoal grey with accents of rich burgundy and metallic gold. The composition is symmetrical and highly structured, conveying a sense of stability and truth. Typography uses elegant, high-contrast serif fonts for titles (resembling legal codes or constitutions) and clean, legible text for definitions. The overall atmosphere is dignified, serious, and credible, mimicking official legal documents or prestigious law firm publications. All text in the image MUST be in Russian (Русский язык).' },
+// ─── Built-in styles ─────────────────────────────────────────────────────────
+
+const BUILTIN_STYLES: InfographicStyle[] = [
+  { id: 'victory_day', label: '9 мая', icon: '🎖️', prompt: 'Professional festive infographic layout for Victory Day (May 9th, День Победы). High-quality patriotic aesthetic featuring Soviet/Russian military symbols, eternal flame, red carnations, St. George ribbon (orange and black stripes), stars, and war memorial elements. Background: Deep red and black with golden accents, dramatic sky, or memorial architectural settings. Visual elements: Victory stars, carnations, St. George ribbon, eternal flame, "1941-1945" period markers, soldier silhouettes. Color palette: Deep reds, black, golden yellow, and orange accents. Typography: Bold, powerful fonts conveying strength, honor, and remembrance. The overall atmosphere is solemn, proud, patriotic, and deeply respectful. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'march8', label: '8 Марта', icon: '🌷', prompt: 'Professional festive infographic layout for International Women\'s Day (March 8th, Международный женский день). High-quality elegant aesthetic featuring spring flowers, tulips, roses, mimosa blossoms, delicate floral patterns, and feminine beauty elements. Background: Soft pinks, lavenders, and warm spring colors. Visual elements: Bouquets, butterflies, spring motifs, hearts, elegant feminine icons. Color palette: Soft pink, lavender purple, warm white, golden accents, and spring greens. Typography: Elegant, graceful script or refined serif fonts. The overall atmosphere is warm, celebratory, beautiful, and joyfully feminine. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'may1', label: '1 мая', icon: '🛠️', prompt: 'Professional festive infographic layout for International Workers\' Day / Labour Day (May 1st, День труда, Первомай). Bold graphic style featuring labor symbols, red flags, spring flowers, worker silhouettes, gear wheels, tools, and solidarity motifs. Background: Bold reds and whites, or spring green with festive elements. Visual elements: Hammers, gears, flags, spring flowers like tulips, fists raised in unity, "1 МАЯ" text decoration. Color palette: Vibrant reds, whites, and spring greens with golden accents. Typography: Bold, expressive display fonts evoking solidarity and celebration. Atmosphere is festive, energetic, hopeful, and celebratory. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'february23', label: '23 февраля', icon: '🇷🇺', prompt: 'Professional festive infographic layout for Defender of the Fatherland Day (February 23rd, День защитника Отечества). High-quality patriotic aesthetic featuring military symbols, camouflage patterns, stars, eagles, Russian military emblems, and masculine strength elements. Background: Military green, dark blue, or dramatic dark backgrounds with light effects. Visual elements: Military stars, helmet, aircraft, tank silhouettes, laurel wreaths, patriotic ribbons. Color palette: Military greens, dark blues, golden stars, and patriotic red accents. Typography: Strong, bold sans-serif fonts conveying military precision and strength. The overall atmosphere is powerful, proud, masculine, and patriotically celebratory. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'aviation', label: 'Авиа', icon: '✈️', prompt: 'Professional aviation and aerospace infographic layout. High-quality modern aesthetic featuring aircraft, airport elements, flight routes, jet engines, and aviation technology. Background: Sky blue gradients, cloud layers, or sleek dark cockpit-style backgrounds. Visual elements: Airplanes, runways, air traffic control, flight paths, propellers, aviation instruments. Color palette: Sky blues, silver metallic, white clouds, with bold accent colors. Typography: Clean, technical sans-serif fonts conveying precision and professionalism. The overall atmosphere is dynamic, technical, modern, and high-altitude. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'automotive', label: 'Авто', icon: '🚗', prompt: 'Professional automotive and transportation infographic layout. High-quality modern aesthetic featuring cars, roads, engines, auto mechanics, and vehicle technology. Background: Dark asphalt, garage scenes, or sleek showroom environments. Visual elements: Cars, tires, engines, speedometers, traffic signs, auto parts, keys. Color palette: Metallic silvers, deep blacks, racing reds, chrome highlights. Typography: Bold, dynamic fonts conveying speed, power, and automotive culture. The overall atmosphere is modern, powerful, technical, and road-ready. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'astrological', label: 'Астро', icon: '✨', prompt: 'Professional astrology and horoscope infographic layout. Mystical, celestial aesthetic featuring zodiac signs, stars, planets, moon phases, celestial maps, and cosmic elements. Background: Deep space purples, midnight blues, dark with glowing star fields. Visual elements: Zodiac wheel, constellation patterns, moon and sun symbols, crystals, mystical patterns. Color palette: Deep purples, navy blues, silver stars, golden celestial symbols, and ethereal glows. Typography: Elegant, mystical serif or decorative fonts evoking cosmic mystery. The overall atmosphere is mystical, cosmic, dreamlike, and astrologically rich. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'banking', label: 'Банки', icon: '🏦', prompt: 'Professional banking and financial services infographic layout. Clean, authoritative aesthetic featuring bank buildings, coins, bank cards, financial graphs, and money flow elements. Background: Deep navy blue or forest green with gold accents, conveying trust and stability. Visual elements: Bank columns, coins, credit cards, percentage symbols, vault doors, financial charts. Color palette: Deep navy, forest green, gold, white, and silver accents. Typography: Trustworthy, professional serif or clean sans-serif fonts. The overall atmosphere is stable, secure, professional, and financially authoritative. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'biology', label: 'Биология', icon: '🦋', prompt: 'Professional biology and life science infographic layout. Scientific aesthetic featuring cells, DNA helixes, organisms, ecosystems, and biological processes. Background: Clean white or deep science-lab backgrounds with bright scientific accents. Visual elements: DNA strands, cell diagrams, microscope imagery, plants, animals, biological cycles. Color palette: Scientific greens, blues, warm organic tones, and clinical whites. Typography: Clean, educational fonts that convey scientific clarity. The overall atmosphere is educational, scientific, precise, and biologically inspiring. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'business_humor', label: 'Бизнес с юмором', icon: '😄', prompt: 'Humorous business infographic layout that blends corporate aesthetics with funny, relatable memes and workplace humor. Playful yet professional style featuring office scenarios, funny business graphs, cartoon executives, and corporate joke elements. Background: Office white or subtle corporate background with comedic elements added. Visual elements: Funny charts (like "productivity vs coffee"), cartoon businesspeople, meme-style icons, office props. Color palette: Professional colors (navy, gray) mixed with bright comedic accent colors. Typography: Mix of formal business fonts with casual, funny script touches. The overall atmosphere is entertaining, relatable, office-humor-forward, and laugh-inducing. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'breaking_news', label: 'Важная новость', icon: '🚨', prompt: 'High-impact breaking news infographic layout. Urgent, attention-grabbing aesthetic featuring news alert elements, bold typography, red warning indicators, and media broadcast design. Background: Deep black or dark red with urgent warning stripes or news ticker elements. Visual elements: Breaking news banner, alert symbols, bold exclamation marks, news camera icons, microphone graphics. Color palette: Urgent reds, alarming oranges, high-contrast blacks and whites. Typography: Bold, heavy display fonts with strong urgency and impact. The overall atmosphere is urgent, important, attention-demanding, and journalistically powerful. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'fun', label: 'Весёлая', icon: '😂', prompt: 'Fun, playful, and humorous infographic layout. Bright, cheerful aesthetic with cartoonish elements, emojis, confetti, and joyful visual design. Background: Bright colorful backgrounds with fun patterns, polka dots, or rainbow gradients. Visual elements: Laughing faces, stars, confetti, speech bubbles, fun icons, cartoon-style graphics. Color palette: Rainbow brights — yellow, pink, orange, cyan, green — all vibrant and cheerful. Typography: Bubbly, rounded display fonts that look friendly and fun. The overall atmosphere is joyful, playful, lighthearted, and genuinely entertaining. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'government', label: 'Власть', icon: '🏛️', prompt: 'Professional government and civic infographic layout. Authoritative, institutional aesthetic featuring government buildings, official seals, patriotic symbols, and civic governance elements. Background: Classic architectural backgrounds — columns, government buildings, official blue/red/white tones. Visual elements: Government seals, flag elements, legislative chambers, official documents, civic emblems. Color palette: Official blues, patriotic reds and whites, gold accents, and authoritative grays. Typography: Formal, dignified serif fonts conveying governmental authority and officialness. The overall atmosphere is authoritative, civic, trustworthy, and institutionally strong. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'gibdd', label: 'ГИБДД', icon: '🚔', prompt: 'Professional traffic police and road safety infographic layout. Official aesthetic featuring police vehicles, road signs, traffic regulations, and road safety elements. Background: Official police blue and white, or road/highway background scenes. Visual elements: Police car, traffic signs, road markings, breathalyzer, speed limit signs, radar gun, handcuffs. Color palette: Official police blues and whites, warning yellows, stop reds, and road safety colors. Typography: Strong, clear official fonts conveying law enforcement authority. The overall atmosphere is official, safety-focused, law-enforcing, and road-regulation-oriented. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'city', label: 'Город', icon: '🏙️', prompt: 'Professional urban city life infographic layout. Modern city aesthetic featuring skylines, streets, architecture, urban culture, and city infrastructure. Background: City skyline panoramas, urban street scenes, or modern architectural backdrops. Visual elements: Skyscrapers, city maps, street signs, transportation, parks, public spaces. Color palette: Urban grays, city blues, glass reflections, with warm evening light accents. Typography: Modern, clean sans-serif fonts reflecting urban sophistication. The overall atmosphere is dynamic, cosmopolitan, modern, and city-life inspired. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'gost', label: 'ГОСТ', icon: '📋', prompt: 'Professional standards and GOST (Russian state standards) infographic layout. Technical, precise aesthetic featuring quality marks, certification symbols, measurement diagrams, and standards documentation. Background: Clean technical white or light gray with precise grid lines and measurement marks. Visual elements: Quality stamps, ГОСТ certification badges, technical diagrams, measurement scales, approval checkmarks. Color palette: Official document colors — whites, grays, blues, and red approval stamps. Typography: Technical, precise monospaced or sans-serif fonts used in official standards. The overall atmosphere is technical, precise, official, and quality-standards-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'gosuslugi', label: 'Госуслуги', icon: '📱', prompt: 'Professional government services and Gosuslugi portal infographic layout. Clean digital government aesthetic featuring the Gosuslugi visual identity, digital documents, online service icons, and citizen service elements. Background: Gosuslugi-inspired blue and white, with digital/app interface elements. Visual elements: Smartphone with government app, digital documents, service categories, verification badges, QR codes. Color palette: Official Gosuslugi blue (#0057FF), white, and supporting accent colors. Typography: Clean, accessible sans-serif fonts matching government digital standards. The overall atmosphere is digital, civic, accessible, and e-government oriented. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'gto', label: 'ГТО', icon: '🏅', prompt: 'Professional GTO (Готов к труду и обороне) fitness standards infographic layout. Energetic sports and fitness aesthetic featuring athletic achievements, GTO badges, fitness exercises, and national fitness program elements. Background: Patriotic sport backgrounds with dynamic athletic movement. Visual elements: GTO gold/silver/bronze badges, running figures, strength exercises, fitness charts, Russian patriotic motifs. Color palette: Gold, silver, bronze award colors with patriotic red, white, and blue accents. Typography: Bold, sporty fonts conveying physical achievement and national pride. The overall atmosphere is athletic, motivated, patriotically sporty, and achievement-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'business', label: 'Деловой', icon: '💼', prompt: 'Professional business and corporate infographic layout. Clean, authoritative aesthetic featuring business charts, corporate settings, professional icons, and executive imagery. Background: Dark corporate backgrounds or clean white with professional accents. Visual elements: Business graphs, briefcase, handshake, corporate building, pie charts, KPI metrics. Color palette: Corporate navy blues, professional grays, gold accents, and clean whites. Typography: Professional, clean sans-serif fonts conveying business authority. The overall atmosphere is professional, strategic, corporate, and executive-level. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'doodle', label: 'Дудл', icon: '✏️', prompt: 'Creative hand-drawn doodle style infographic layout. Artsy, sketchy aesthetic featuring hand-drawn illustrations, pen-and-ink drawings, scribbles, and whimsical artwork. Background: White or kraft paper texture with sketch marks and doodle patterns. Visual elements: Hand-drawn icons, sketch arrows, doodle borders, pen scribbles, cross-hatching, cartoon-style drawings. Color palette: Pen black on white, with selective watercolor-style color accents (blues, yellows, pinks). Typography: Handwriting-style or chalkboard fonts that feel organic and artistic. The overall atmosphere is creative, artistic, handcrafted, and charming. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'food', label: 'Еда', icon: '🍳', prompt: 'Professional food and culinary infographic layout. Appetizing, vibrant aesthetic featuring delicious food photography-inspired art, kitchen elements, cooking tools, and culinary culture. Background: Warm kitchen tones, rustic wood textures, or clean white food photography style. Visual elements: Beautifully rendered food items, cooking utensils, chef hat, ingredients, recipe cards. Color palette: Warm appetizing tones — golden yellows, tomato reds, herb greens, cream whites. Typography: Warm, inviting fonts that feel culinary and approachable. The overall atmosphere is appetizing, warm, culinary, and mouthwateringly inspired. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'animals', label: 'Животные', icon: '🐾', prompt: 'Professional wildlife and animals infographic layout. Natural, vibrant aesthetic featuring diverse animals, their habitats, natural behaviors, and wildlife facts. Background: Natural habitat backgrounds — savanna, forest, ocean, or arctic environments. Visual elements: Illustrated or stylized animals, paw prints, wildlife maps, animal anatomy diagrams, conservation symbols. Color palette: Natural earth tones, forest greens, ocean blues, savanna golds, and vibrant animal colors. Typography: Friendly, educational fonts suitable for nature content. The overall atmosphere is natural, educational, wildlife-celebrating, and beautifully biodiversity-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'zhkh', label: 'ЖКХ', icon: '🏠', prompt: 'Professional housing and communal services (ЖКХ) infographic layout. Clear, practical aesthetic featuring residential buildings, utility services, maintenance, and housing management elements. Background: Residential building facades, utility infrastructure, or clean schematic diagrams. Visual elements: Apartment buildings, utility meters, plumbing symbols, heating radiators, payment receipts, maintenance tools. Color palette: Practical blues and greens for water/gas, warm oranges for heating, institutional grays. Typography: Clear, bureaucratic yet readable fonts suitable for official housing information. The overall atmosphere is practical, informative, civic, and housing-service-oriented. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'mysterious', label: 'Загадочная', icon: '🕵️', prompt: 'Mysterious and detective-style infographic layout. Dark, suspenseful aesthetic featuring detective elements, mystery clues, shadow and light contrasts, and investigative imagery. Background: Dark atmospheric backgrounds with dramatic spotlight effects, foggy ambiance, or noir city night scenes. Visual elements: Magnifying glass, question marks, shadow figures, detective hat, mystery symbols, evidence boards. Color palette: Deep blacks and charcoals, dramatic golds and ambers, mysterious purples, with bright spotlight accents. Typography: Film noir or detective-style fonts — stylized serifs or monospace giving a mysterious feel. The overall atmosphere is suspenseful, intriguing, mysterious, and detective-noir inspired. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'salary_pension', label: 'Зарплата и пенсия', icon: '💰', prompt: 'Professional salary and pension infographic layout. Clear financial aesthetic featuring income charts, pension savings, salary calculations, and retirement planning elements. Background: Financial document style backgrounds — clean whites or professional blues. Visual elements: Money bags, salary graphs, pension piggy bank, calculator, financial charts, banknotes, growth arrows. Color palette: Money greens, financial blues, gold coin yellows, and trustworthy grays. Typography: Clear, professional financial fonts for easy reading of numbers and data. The overall atmosphere is financially informative, clear, trustworthy, and economically practical. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'health', label: 'Здоровье', icon: '❤️', prompt: 'Professional health and wellness infographic layout. Clean, medical-inspired aesthetic featuring health statistics, wellness tips, body systems, and medical information. Background: Clean medical white, fresh greens, or health-focused calm backgrounds. Visual elements: Heart, medical cross, body silhouettes, health charts, vitamins, exercise icons, pulse wave. Color palette: Medical whites, health greens, heart reds, calming blues, and fresh accents. Typography: Clear, readable medical-style fonts conveying health authority. The overall atmosphere is healthy, caring, medically informative, and wellness-promoting. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'ai_news', label: 'ИИ', icon: '🤖', prompt: 'Professional artificial intelligence and technology news infographic layout. Futuristic, cutting-edge aesthetic featuring AI concepts, neural networks, robot elements, and tech innovation imagery. Background: Dark tech backgrounds with glowing circuit patterns, digital grids, or cyberpunk neon effects. Visual elements: Robot faces, neural network diagrams, binary code, AI brain representations, tech gadgets, glowing interfaces. Color palette: Neon blues, electric purples, matrix greens, dark backgrounds, with glowing tech accents. Typography: Futuristic sans-serif or monospace fonts evoking AI and digital intelligence. The overall atmosphere is futuristic, cutting-edge, technically impressive, and AI-forward. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'fact', label: 'Интересный факт', icon: '💡', prompt: 'Professional interesting facts infographic layout. Engaging, discovery-focused aesthetic featuring lightbulb moments, question and answer elements, wow factor visuals, and fact-spotlight design. Background: Clean bright backgrounds with spotlight effects or dark backgrounds with illuminated fact bubbles. Visual elements: Light bulbs, exclamation marks, magnifying glass, "Did you know?" style callouts, number highlights. Color palette: Bright golden yellows, vivid blues, orange accents, and clean whites to highlight key facts. Typography: Bold, readable display fonts that make facts pop and engage the reader. The overall atmosphere is fascinating, educational, surprising, and fact-celebrating. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'internet', label: 'Интернет', icon: '🌐', prompt: 'Professional internet and digital technology infographic layout. Modern, connected aesthetic featuring global networks, internet symbols, digital communication, and web technology. Background: Digital globe networks, fiber optic light trails, or clean tech interfaces. Visual elements: World map with connection lines, WiFi symbols, browser windows, social media icons, data streams. Color palette: Digital blues, network teals, internet purples, white, and electric accent colors. Typography: Modern, clean digital fonts suited for technology content. The overall atmosphere is connected, global, digital, and technology-forward. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'historical', label: 'Исторический', icon: '📜', prompt: 'Professional historical infographic layout. Classic, archival aesthetic featuring historical documents, vintage maps, historical portraits, timeline elements, and period-specific design. Background: Aged parchment textures, old paper, antique map backgrounds, or sepia-toned vintage environments. Visual elements: Scroll documents, historical illustrations, timeline markers, antique portraits, period artifacts, laurel wreaths. Color palette: Sepia browns, aged golds, parchment creams, ink blacks, and vintage warm tones. Typography: Classic serif fonts, calligraphy-inspired styles, or period-appropriate typography. The overall atmosphere is historically rich, scholarly, archival, and timelessly educational. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'cybersecurity', label: 'Кибербезопасность', icon: '🛡️', prompt: 'Professional cybersecurity and digital protection infographic layout. Secure, technical aesthetic featuring shields, locks, encrypted data, firewalls, and digital defense elements. Background: Dark cyberpunk or matrix-style backgrounds with digital protection themes. Visual elements: Shield icons, padlocks, encryption symbols, firewall representations, hacker vs defender imagery, binary code. Color palette: Dark backgrounds, glowing greens (like Matrix), electric blues, security gold, and warning reds. Typography: Monospace or technical fonts conveying code and cybersecurity. The overall atmosphere is secure, technical, protective, and cyber-defense-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'space', label: 'Космос', icon: '🚀', prompt: 'Professional space and astronomy infographic layout. Cosmic, awe-inspiring aesthetic featuring planets, stars, galaxies, spacecraft, and space exploration imagery. Background: Deep space backgrounds — star fields, nebulas, galaxy spirals, or planet surfaces. Visual elements: Rockets, planets, moons, astronauts, space stations, telescopes, cosmic phenomena. Color palette: Deep space blacks, nebula purples and blues, star golds, planet oranges and reds, Milky Way whites. Typography: Futuristic, space-age fonts conveying cosmic grandeur and exploration. The overall atmosphere is vast, awe-inspiring, scientifically exciting, and cosmically magnificent. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'culture', label: 'Культура', icon: '🎨', prompt: 'Professional culture and arts infographic layout. Creative, artistic aesthetic featuring visual arts, theater, architecture, literature, and cultural heritage. Background: Gallery white walls, dramatic theater curtains, or cultural heritage architecture. Visual elements: Paintbrushes, art palette, theatrical masks, musical notes, books, cultural symbols, famous artworks. Color palette: Rich artistic tones — gallery whites, dramatic reds, golden cultural accents, and vibrant artistic colors. Typography: Elegant, cultural fonts that reflect artistic sophistication. The overall atmosphere is cultured, artistic, creative, and humanities-celebrating. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'medical', label: 'Медицинский', icon: '🏥', prompt: 'Professional medical and healthcare infographic layout. Clean, sterile-yet-warm aesthetic featuring medical imagery, health statistics, medical procedures, and healthcare information. Background: Clean hospital white, medical blue, or clinical but humanized environments. Visual elements: Medical cross, stethoscope, pills, anatomical diagrams, hospital building, doctor silhouettes, health charts. Color palette: Clinical whites, medical blues, heart reds, pharmacy greens, and sterile accents. Typography: Clear, authoritative medical fonts ensuring clarity and trustworthiness. The overall atmosphere is professional, health-focused, medically accurate, and care-inspiring. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'messenger_max', label: 'Мессенджер MAX', icon: '💬', prompt: 'Professional messaging app and VK Messenger MAX style infographic layout. Modern digital communication aesthetic featuring chat bubbles, notification elements, messaging interfaces, and VK/MAX visual style. Background: VK-style deep blue gradients or modern messenger app interface backgrounds. Visual elements: Chat bubbles, message notifications, user avatars, emoji, voice/video call icons, file sharing symbols. Color palette: VK blue (#0077FF), white, light grays, and messenger interface accent colors. Typography: Modern, clean sans-serif fonts matching social media and messaging app standards. The overall atmosphere is social, connected, communicative, and digitally friendly. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'weather', label: 'Метео', icon: '🌤️', prompt: 'Professional meteorological weather infographic layout. Clear, atmospheric aesthetic featuring weather maps, atmospheric phenomena, temperature data, and meteorological elements. Background: Atmospheric sky backgrounds — partly cloudy, storm formations, or weather satellite views. Visual elements: Weather symbols, temperature scales, cloud formations, wind arrows, precipitation maps, weather stations. Color palette: Sky blues, cloud whites, storm grays, sunny yellows, rain blues, and atmospheric gradients. Typography: Clear, readable weather forecast fonts suitable for data presentation. The overall atmosphere is informative, atmospheric, weather-science-focused, and forecasting-oriented. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'metro', label: 'Метро', icon: '🚇', prompt: 'Professional metro and subway system infographic layout. Urban transit aesthetic featuring metro maps, station designs, subway trains, and urban transportation elements. Background: Metro station architectural elements — arched ceilings, platform scenes, or metro map backgrounds. Visual elements: Metro train, station signs, metro map lines, turnstiles, escalators, route indicators. Color palette: Metro line colors (various reds, blues, greens, etc.), underground station grays, and signage yellows. Typography: Clear transit-style fonts used in metro signage and maps. The overall atmosphere is urban, efficient, transit-focused, and underground-journey-inspiring. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'world', label: 'Мир', icon: '🌍', prompt: 'Professional world news and global affairs infographic layout. Global, connected aesthetic featuring world maps, international flags, global statistics, and world events. Background: World map projections, globe imagery, or international event backgrounds. Visual elements: World globe, country outlines, international flags, global statistics charts, connection lines, UN-style icons. Color palette: Ocean blues, earth greens, continent browns, with international accent colors. Typography: International, neutral fonts suited for global news presentation. The overall atmosphere is global, informed, internationally-minded, and world-event-aware. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'minimal', label: 'Минимализм', icon: '⬜', prompt: 'Clean minimalist infographic layout. Stripped-back, elegant aesthetic focusing on whitespace, simple geometric shapes, and maximum clarity. Background: Pure white or very light gray — clean and uncluttered. Visual elements: Simple geometric shapes, thin lines, minimal icons, essential data only, generous whitespace. Color palette: White, light gray, with one carefully chosen accent color (black, navy, or a single vivid color). Typography: Elegant thin or regular weight sans-serif fonts — maximum readability and sophistication. The overall atmosphere is refined, sophisticated, clean, and beautifully restrained. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'scam', label: 'Мошенники', icon: '🎭', prompt: 'Professional fraud and scammer awareness infographic layout. Alert, warning-focused aesthetic featuring fraud symbols, warning signs, scam tactics, and public safety messaging. Background: Dark warning backgrounds with red alert elements, or official police-style layouts. Visual elements: Warning triangles, phishing hook, masks, fraud symbols, phone scam icons, cybercriminal imagery. Color palette: Warning reds and oranges, cautionary yellows, dark backgrounds, with white alert text. Typography: Bold, urgent fonts that convey serious public safety warnings. The overall atmosphere is warning-focused, protective, public-safety-oriented, and anti-fraud. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'musical', label: 'Музыкальный', icon: '🎵', prompt: 'Professional music and musical arts infographic layout. Rhythmic, artistic aesthetic featuring musical notes, instruments, sound waves, concert elements, and musical culture. Background: Concert stage lighting, music studio environments, or artistic music-themed backgrounds. Visual elements: Musical notes, treble clefs, piano keys, guitar, violin, microphone, sound equalizer waves. Color palette: Deep concert blacks and purples, spotlight golds, stage lighting colors, vibrant electric blues. Typography: Artistic, rhythmic fonts reflecting musicality and creative expression. The overall atmosphere is musical, rhythmic, creative, and artistically inspiring. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'mchs', label: 'МЧС', icon: '🚒', prompt: 'Professional emergency services and МЧС (Ministry of Emergency Situations) infographic layout. Official emergency aesthetic featuring firefighters, rescue operations, emergency vehicles, and disaster response elements. Background: Emergency red and orange backgrounds, fire scene environments, or official МЧС dark blue. Visual elements: Fire truck, firefighter equipment, rescue helicopter, emergency symbols, МЧС emblem elements, safety warnings. Color palette: Emergency reds and oranges, МЧС official blue, white, yellow safety colors. Typography: Strong, official fonts conveying emergency authority and rapid response. The overall atmosphere is urgent, official, safety-critical, and emergency-response-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'newyear', label: 'Новогодний', icon: '🎄', prompt: 'Festive New Year and Christmas infographic layout. Magical, celebratory aesthetic featuring winter holiday elements, Christmas trees, snowflakes, fireworks, and New Year celebration imagery. Background: Magical winter night sky, decorated Christmas tree backgrounds, or festive starry scenes. Visual elements: Christmas tree, snowflakes, fireworks, champagne glasses, party decorations, "С Новым Годом!" text treatments. Color palette: Festive reds and greens, golden stars, sparkly silvers, deep midnight blues, and glowing warm whites. Typography: Festive, celebratory display fonts with holiday spirit. The overall atmosphere is magical, festive, warm, and joyfully celebratory. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'news', label: 'Новостная', icon: '📰', prompt: 'Professional news media infographic layout. Journalistic, authoritative aesthetic featuring newspaper-inspired design, news headline elements, breaking news banners, and media presentation. Background: Clean newsprint-inspired backgrounds or modern digital news interface designs. Visual elements: Newspaper columns, news banners, reporter microphone, news ticker, camera, editorial graphics. Color palette: Journalistic black and white with selective red headline accents, professional grays. Typography: Newspaper-style serif fonts for body text, bold sans-serif for headlines — classic journalistic presentation. The overall atmosphere is informative, journalistic, authoritative, and news-media-professional. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'nostalgia', label: 'Ностальгия', icon: '🖼️', prompt: 'Nostalgic retro Soviet/Russian infographic layout. Warm, sentimental aesthetic featuring vintage Soviet-era graphic design, old Russian visual culture, and nostalgic elements from the USSR era. Background: Faded Soviet poster backgrounds, vintage wallpaper patterns, or aged photograph textures. Visual elements: Vintage Soviet illustrations, old Russian consumer goods, classic car silhouettes, Sputnik, Stalin-era architecture. Color palette: Faded Soviet reds, warm sepia tones, aged paper yellows, and nostalgic earth tones. Typography: Classic Soviet-era Cyrillic fonts or retro sans-serif styles. The overall atmosphere is nostalgic, sentimental, vintage, and Soviet-era-celebrating. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'education', label: 'Образование', icon: '📚', prompt: 'Professional education and learning infographic layout. Clear, inspiring aesthetic featuring school and university elements, learning symbols, knowledge sharing, and educational content. Background: Clean classroom backgrounds, library settings, or academic institutional environments. Visual elements: Books, graduation cap, pencils, chalkboard elements, knowledge symbols, school building, students. Color palette: Academic blues, warm educational tans, knowledge greens, and cheerful learning yellows. Typography: Clear, readable educational fonts that are approachable and informative. The overall atmosphere is educational, inspiring, knowledge-focused, and academically oriented. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'weather_pixar', label: 'Погода (Пиксар)', icon: '⛅', prompt: 'Pixar animation-style weather infographic. Charming, 3D-rendered aesthetic inspired by Pixar/Disney animated movies featuring adorable anthropomorphic weather elements, soft lighting, and cartoon physics. Background: Soft animated sky backgrounds with fluffy cartoon clouds, warm Pixar-style lighting. Visual elements: Adorable cartoon sun with face, cute rain cloud characters, friendly snowflakes, animated wind, cheerful rainbow. Color palette: Bright, saturated Pixar colors — warm sunlight yellows, soft sky blues, gentle cloud whites, playful rainbow accents. Typography: Friendly, rounded fonts like those in animated movies — warm and inviting. The overall atmosphere is charming, animated, delightfully Pixar-inspired, and heartwarming. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'generations', label: 'Поколение', icon: '👥', prompt: 'Professional generational demographics infographic layout. Multi-generational aesthetic featuring different age groups (Baby Boomers, Gen X, Millennials, Gen Z, Alpha), lifestyle comparisons, and demographic trends. Background: Clean sociological study backgrounds or multi-generational scene illustrations. Visual elements: Generational timeline, age group silhouettes, technology evolution, lifestyle symbols across eras, generation labels. Color palette: Multi-generational palette — vintage tones for older, vibrant modern colors for younger generations. Typography: Clear demographic fonts that feel both journalistic and academic. The overall atmosphere is sociological, multi-generational, insightful, and generationally comparative. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'holidays', label: 'Праздники', icon: '🎉', prompt: 'Festive holidays and celebration infographic layout. Vibrant, joyful aesthetic featuring general celebration elements, party symbols, festive decorations, and holiday cheer. Background: Festive party backgrounds with streamers, confetti, and celebration energy. Visual elements: Party poppers, confetti, balloons, gift boxes, fireworks, celebration banners, clinking glasses. Color palette: Rainbow festive colors — golds, reds, blues, greens, and sparkling silvers all celebrating together. Typography: Celebratory display fonts with festive energy and holiday spirit. The overall atmosphere is joyful, celebratory, festive, and holiday-season-perfect. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'products', label: 'Продукты', icon: '🛒', prompt: 'Professional grocery and consumer products infographic layout. Fresh, retail-oriented aesthetic featuring food products, shopping elements, pricing, and consumer goods. Background: Fresh market or supermarket-inspired backgrounds, clean white product presentation. Visual elements: Shopping cart, product displays, fresh produce, price tags, packaging, store shelves, consumer goods. Color palette: Fresh market greens, clean whites, product-focused colors, retail blues, and appetite-stimulating warm tones. Typography: Clear, retail-appropriate fonts for product information presentation. The overall atmosphere is fresh, consumer-friendly, retail-oriented, and product-showcasing. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'psychological', label: 'Психологический', icon: '🧠', prompt: 'Professional psychology and mental health infographic layout. Thoughtful, mind-focused aesthetic featuring brain imagery, psychological concepts, mental wellness symbols, and cognitive science visuals. Background: Calm, therapeutic backgrounds — soft blues, purples, or mindful neutral tones. Visual elements: Brain illustration, thought bubbles, mind map elements, psychology symbols, cognitive diagrams, mental wellness icons. Color palette: Calming blues, therapeutic purples, mindful teals, gentle pinks, and serene neutrals. Typography: Approachable, thoughtful fonts that feel both professional and human. The overall atmosphere is thoughtful, psychologically informed, mentally-health-positive, and mind-exploring. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'retro', label: 'Ретро', icon: '📺', prompt: 'Retro vintage 70s-80s Soviet/Russian infographic layout. Nostalgic retro aesthetic featuring vintage graphic design styles, old TV set imagery, cassette tapes, vintage electronics, and retro pop art. Background: Retro wallpaper patterns, vintage TV screen effects, or old-school graphic design backdrops. Visual elements: Old TV set, cassette tape, vinyl record, retro telephone, 8-bit game elements, vintage Soviet consumer electronics. Color palette: Retro oranges, browns, harvest golds, avocado greens, and vintage pastel tones. Typography: Retro slab serif, groovy 70s fonts, or pixel-style text. The overall atmosphere is nostalgic, retro-cool, vintage, and timelessly old-school charming. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'recipes', label: 'Рецепты блюд', icon: '🍽️', prompt: 'Professional cooking recipes infographic layout. Warm, appetizing aesthetic featuring recipe ingredients, cooking steps, kitchen elements, and culinary art. Background: Warm kitchen environments, rustic wooden textures, or clean cooking blog-style white. Visual elements: Recipe ingredients laid out artfully, cooking pots, measuring cups, step-by-step instruction graphics, beautiful finished dishes. Color palette: Warm kitchen tones — cream whites, warm yellows, herb greens, spice oranges, and appetizing food colors. Typography: Friendly recipe-style fonts, warm and inviting for culinary content. The overall atmosphere is warm, culinary, step-by-step-instructional, and deliciously appetizing. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'parents_children', label: 'Родители и дети', icon: '👪', prompt: 'Professional family and parenting infographic layout. Warm, loving aesthetic featuring family scenarios, parent-child relationships, parenting tips, and family life content. Background: Warm family home environments, bright playful children\'s areas, or soft domestic scenes. Visual elements: Family silhouettes, parent-child interactions, home symbols, toy icons, family tree, parenting advice visuals. Color palette: Warm family tones — soft yellows, warm pinks, gentle blues, home oranges, and nurturing neutrals. Typography: Warm, approachable fonts that feel family-friendly and parenting-positive. The overall atmosphere is warm, loving, family-centered, and parenting-supportive. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'gardening', label: 'Садоводство', icon: '🌱', prompt: 'Professional gardening and horticulture infographic layout. Fresh, natural aesthetic featuring garden plants, gardening tools, seasonal planting guides, and green-thumb content. Background: Garden environments — vegetable garden rows, flower beds, or greenhouse settings. Visual elements: Watering can, trowel, seed packets, plant growth stages, garden calendar, flowers, vegetables. Color palette: Natural greens, earth soil browns, flower petal colors, sky blues, and fresh outdoor tones. Typography: Natural, earthy fonts that feel organic and gardening-appropriate. The overall atmosphere is green, natural, growth-promoting, and garden-loving. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'telecom', label: 'Связь', icon: '📶', prompt: 'Professional telecommunications infographic layout. Modern signal-focused aesthetic featuring mobile networks, communication towers, data transmission, and telecom technology. Background: Digital signal patterns, cell tower landscapes, or telecom infrastructure visuals. Visual elements: Cell towers, signal bars, fiber optic cables, 5G symbols, mobile phones, satellite dishes, network diagrams. Color palette: Telecom blues and greens, signal whites, technical grays, with modern tech accent colors. Typography: Technical, modern sans-serif fonts used in technology and telecom contexts. The overall atmosphere is connected, technical, communications-focused, and digitally modern. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'social', label: 'Социальный', icon: '🤝', prompt: 'Professional social welfare and community infographic layout. Warm, inclusive aesthetic featuring community support, social services, human connection, and civic solidarity. Background: Community-centered backgrounds — diverse groups, shared spaces, or social support environments. Visual elements: Helping hands, community circles, social support symbols, diverse people silhouettes, heart icons, communal imagery. Color palette: Warm, inclusive tones — caring blues, community greens, warm oranges, hopeful yellows, and human-centered neutrals. Typography: Accessible, inclusive fonts that feel welcoming to all community members. The overall atmosphere is warm, inclusive, community-supporting, and socially conscious. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'sports', label: 'Спорт', icon: '⚽', prompt: 'Professional sports and athletic infographic layout. Dynamic, energetic aesthetic featuring sporting events, athlete imagery, competition elements, and sports statistics. Background: Stadium environments, sports field textures, or dynamic athletic action backgrounds. Visual elements: Sports equipment (ball, racket, etc.), athlete silhouettes, podium, medal, scoreboard, sports data charts. Color palette: Energetic sports colors — champion golds, competitive blues, victory reds, and field greens. Typography: Bold, dynamic sports fonts conveying energy, speed, and athletic achievement. The overall atmosphere is athletic, competitive, champion-celebrating, and sports-culture-celebrating. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'tech', label: 'Технологии', icon: '💻', prompt: 'Professional technology and innovation infographic layout. Modern, forward-looking aesthetic featuring tech gadgets, digital innovation, startup culture, and technology trends. Background: Clean dark tech backgrounds with subtle circuit patterns or modern office technology environments. Visual elements: Laptops, smartphones, tablets, app interfaces, code snippets, tech innovation icons, startup graphics. Color palette: Tech blues, innovation purples, clean whites, dark backgrounds, and neon accent colors. Typography: Modern, clean sans-serif tech fonts conveying innovation and forward-thinking. The overall atmosphere is innovative, tech-forward, modern, and digitally transformative. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'goods', label: 'Товары', icon: '🛍️', prompt: 'Professional consumer goods and retail infographic layout. Clean, product-focused aesthetic featuring product displays, shopping elements, brand imagery, and consumer market content. Background: Clean retail backgrounds, product photography style settings, or market-oriented designs. Visual elements: Shopping bags, product packages, retail tags, store imagery, consumer goods displays, brand elements. Color palette: Clean retail whites, product-highlight colors, shopping-inspired tones, and consumer-friendly accents. Typography: Clean, retail-friendly fonts suitable for product and market information. The overall atmosphere is retail-oriented, consumer-friendly, product-showcasing, and market-aware. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'financial', label: 'Финансовый', icon: '💹', prompt: 'Professional financial markets and investment infographic layout. Authoritative, data-rich aesthetic featuring financial charts, stock market elements, investment analysis, and economic indicators. Background: Financial data screens, stock exchange floors, or clean financial report styles. Visual elements: Stock charts, candlestick graphs, financial indicators, currency symbols, bull/bear market icons, investment portfolios. Color palette: Financial greens and reds, market blues, gold investment tones, and professional corporate colors. Typography: Precise, financial-industry fonts suitable for data and market analysis. The overall atmosphere is financially sophisticated, data-driven, investment-focused, and economically analytical. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'christian', label: 'Христианский', icon: '✝️', prompt: 'Professional Christian religious infographic layout. Reverent, spiritual aesthetic featuring Orthodox Christian symbols, church architecture, religious imagery, and faith-based content. Background: Orthodox church domes and architecture, golden icon-style backgrounds, or spiritual light effects. Visual elements: Cross, church domes, candles, Orthodox icons, religious calendar dates, church symbols, biblical imagery. Color palette: Sacred golds, deep religious blues, holy whites, icon-painting colors, and spiritual purples. Typography: Traditional, reverent serif fonts with a spiritual and ecclesiastical feel. The overall atmosphere is reverent, spiritually meaningful, faith-based, and Orthodox-Christian-respectful. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'school', label: 'Школьный', icon: '🏫', prompt: 'Professional school and student life infographic layout. Bright, educational aesthetic featuring school environments, student life, academic subjects, and educational milestones. Background: Bright classroom environments, school yard settings, or friendly academic illustrations. Visual elements: School building, backpack, pencil, notebook, ruler, globe, student desks, bell, teacher elements. Color palette: Bright school colors — apple reds, chalkboard greens, pencil yellows, notebook blues, and energetic student-friendly tones. Typography: Clear, student-friendly educational fonts that are readable and age-appropriate. The overall atmosphere is educational, youthful, school-celebrating, and student-life-friendly. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'fines', label: 'Штрафы', icon: '⚠️', prompt: 'Professional fines and penalties infographic layout. Clear, authoritative aesthetic featuring warning symbols, penalty amounts, legal consequences, and official fine notices. Background: Official document styling, court paper backgrounds, or warning-colored official designs. Visual elements: Warning triangles, official stamp icons, fine ticket graphics, penalty amounts, legal scales, court building. Color palette: Official warning yellows and oranges, authority reds, legal document blacks and whites. Typography: Official, bureaucratic fonts conveying legal authority and seriousness. The overall atmosphere is authoritative, legally informative, officially styled, and fine-and-penalty-focused. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'ecology', label: 'Экология', icon: '🌿', prompt: 'Professional ecology and environmental infographic layout. Fresh, natural aesthetic featuring environmental issues, green sustainability, climate action, and ecological data. Background: Natural environments — forests, oceans, clean air scenes, or green sustainability backgrounds. Visual elements: Leaf motifs, Earth globe, recycling symbols, clean energy icons, wildlife, environmental data charts. Color palette: Natural greens, earth blues, sustainable earth tones, environmental golds, and eco-friendly accents. Typography: Natural, clean fonts that feel environmentally conscious and sustainability-focused. The overall atmosphere is environmentally aware, green, sustainability-promoting, and ecologically responsible. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'electronics', label: 'Электроника', icon: '📱', prompt: 'Professional consumer electronics infographic layout. Modern, tech-sleek aesthetic featuring smartphones, gadgets, electronics reviews, and consumer technology. Background: Clean tech product backgrounds, dark showroom-style settings, or modern electronics store environments. Visual elements: Smartphones, tablets, laptops, earbuds, smartwatches, electronic components, product spec displays. Color palette: Sleek blacks and silvers, tech blues, clean whites, and modern electronic product accent colors. Typography: Clean, modern product-presentation fonts used in consumer electronics marketing. The overall atmosphere is modern, gadget-focused, tech-savvy, and consumer-electronics-celebrating. All text in the image MUST be in Russian (Русский язык).' },
+  { id: 'legal', label: 'Юридический', icon: '⚖️', prompt: 'Professional legal and juridical infographic layout. Authoritative, justice-focused aesthetic featuring legal symbols, court imagery, law books, and juridical process elements. Background: Courtroom environments, law library settings, or classic legal document backgrounds. Visual elements: Scales of justice, gavel, law books, legal document scrolls, courthouse pillars, judge\'s robe. Color palette: Authoritative deep blues, judicial golds, legal document creams and browns, formal blacks. Typography: Classical, authoritative serif fonts conveying legal gravitas and professional standing. The overall atmosphere is authoritative, legally precise, justice-focused, and professionally juridical. All text in the image MUST be in Russian (Русский язык).' },
 ];
 
 const ASPECT_RATIOS = [
-  { id: '1:1', label: 'Квадрат', icon: '⬜' },
-  { id: '3:4', label: 'Портрет', icon: '📄' },
-  { id: '9:16', label: 'Сторис', icon: '📱' },
-  { id: '16:9', label: 'Альбом', icon: '🖥️' },
+  { id: '1:1', label: 'Квадрат', icon: '⬛', ratio: '1:1' },
+  { id: '3:4', label: 'Портрет', icon: '📄', ratio: '3:4' },
+  { id: '9:16', label: 'Stories', icon: '📱', ratio: '9:16' },
+  { id: '16:9', label: 'Широкий', icon: '🖥️', ratio: '16:9' },
 ];
 
-const MODELS = [
-  { id: 'gemini-3.1-flash-image-preview', label: 'Flash 3.1 (Быстрая)', icon: '⚡' },
-  { id: 'gemini-3-pro-image-preview', label: 'Pro 3.0 (Качественная)', icon: '💎' },
-];
+// ─── Storage helpers ──────────────────────────────────────────────────────────
 
-const App: React.FC = () => {
-  const [topic, setTopic] = useState('');
-  const [selectedStyle, setSelectedStyle] = useState(INFOGRAPHIC_STYLES[0]);
-  const [selectedRatio, setSelectedRatio] = useState(ASPECT_RATIOS[1]); // Default to 3:4
-  const [selectedModel, setSelectedModel] = useState(MODELS[0]);
-  const [watermarkText, setWatermarkText] = useState('@newsregions');
-  const [showWatermark, setShowWatermark] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [needsApiKey, setNeedsApiKey] = useState(false);
+function loadCustomStyles(): InfographicStyle[] {
+  try { return JSON.parse(localStorage.getItem('custom_styles') || '[]'); } catch { return []; }
+}
+function saveCustomStyles(styles: InfographicStyle[]) {
+  localStorage.setItem('custom_styles', JSON.stringify(styles));
+}
+function loadCustomModels(): AIModel[] {
+  try { return JSON.parse(localStorage.getItem('custom_models') || '[]'); } catch { return []; }
+}
+function saveCustomModels(models: AIModel[]) {
+  localStorage.setItem('custom_models', JSON.stringify(models));
+}
 
-  // Rewrite Mode State
-  const [activeTab, setActiveTab] = useState<'infographic' | 'rewrite'>('infographic');
-  const [rewriteInput, setRewriteInput] = useState('');
-  const [rewriteOutput, setRewriteOutput] = useState('');
+// ─── Style Manager Modal ──────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const verifyKey = async () => {
-      const hasKey = await checkApiKeySelection();
-      setNeedsApiKey(!hasKey);
-    };
-    verifyKey();
-  }, []);
+interface StyleManagerProps {
+  customStyles: InfographicStyle[];
+  onSave: (styles: InfographicStyle[]) => void;
+  onClose: () => void;
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!topic.trim()) return;
+const StyleManager: React.FC<StyleManagerProps> = ({ customStyles, onSave, onClose }) => {
+  // customStyles includes both pure-custom and overrides of built-ins (same id)
+  const [customs, setCustoms] = useState<InfographicStyle[]>(customStyles);
+  const [editing, setEditing] = useState<InfographicStyle | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [formIcon, setFormIcon] = useState('✨');
+  const [formLabel, setFormLabel] = useState('');
+  const [formPrompt, setFormPrompt] = useState('');
+  const [formError, setFormError] = useState('');
 
-    // Double check key before starting
-    const hasKey = await checkApiKeySelection();
-    if (!hasKey) {
-      setNeedsApiKey(true);
-      return;
-    }
+  // Merged list: built-ins overridden by any same-id custom, then pure customs appended
+  const overrideMap = new Map<string, InfographicStyle>(customs.map(s => [s.id, s]));
+  const mergedBuiltins = BUILTIN_STYLES.map(s => overrideMap.get(s.id) ?? s);
+  const pureCustoms = customs.filter(c => !BUILTIN_STYLES.some(b => b.id === c.id));
 
-    setIsGenerating(true);
-    setError(null);
-    setGeneratedImage(null);
+  const isOverridden = (id: string) => customs.some(c => c.id === id && BUILTIN_STYLES.some(b => b.id === id));
 
-    try {
-      const imageUrl = await generateInfographic(
-        topic, 
-        selectedStyle.prompt, 
-        selectedRatio.id, 
-        selectedModel.id,
-        watermarkText,
-        showWatermark
-      );
-      setGeneratedImage({
-        url: imageUrl,
-        topic: topic,
-        timestamp: Date.now(),
-        aspectRatio: selectedRatio.id
-      });
-    } catch (err: any) {
-      setError(err.message || 'Произошла ошибка при создании изображения');
-      // If the error implies missing key (404/403 often mapped), re-prompt
-      if (err.message && err.message.includes("API Key")) {
-        setNeedsApiKey(true);
-      }
-    } finally {
-      setIsGenerating(false);
-    }
+  const openEdit = (s: InfographicStyle) => {
+    setEditing(s); setCreating(false);
+    setFormIcon(s.icon); setFormLabel(s.label); setFormPrompt(s.prompt); setFormError('');
+  };
+  const openCreate = () => {
+    setCreating(true); setEditing(null);
+    setFormIcon('✨'); setFormLabel(''); setFormPrompt(''); setFormError('');
   };
 
-  const handleRewriteSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rewriteInput.trim()) return;
-
-    const hasKey = await checkApiKeySelection();
-    if (!hasKey) {
-      setNeedsApiKey(true);
-      return;
+  const handleSaveForm = () => {
+    if (!formLabel.trim()) { setFormError('Введите название стиля.'); return; }
+    if (!formPrompt.trim()) { setFormError('Введите промпт стиля.'); return; }
+    setFormError('');
+    if (editing) {
+      // Save as override (same id) or update existing custom
+      const updated = { ...editing, icon: formIcon, label: formLabel, prompt: formPrompt, isCustom: true };
+      setCustoms(prev => prev.some(c => c.id === editing.id)
+        ? prev.map(c => c.id === editing.id ? updated : c)
+        : [...prev, updated]);
+    } else {
+      setCustoms(prev => [...prev, { id: `custom_${Date.now()}`, label: formLabel, icon: formIcon, prompt: formPrompt, isCustom: true }]);
     }
-
-    setIsGenerating(true);
-    setError(null);
-    setRewriteOutput('');
-
-    try {
-      const result = await rewriteText(rewriteInput);
-      setRewriteOutput(result);
-    } catch (err: any) {
-      setError(err.message || 'Произошла ошибка при рерайте текста');
-      if (err.message && err.message.includes("API Key")) {
-        setNeedsApiKey(true);
-      }
-    } finally {
-      setIsGenerating(false);
-    }
+    setEditing(null); setCreating(false);
   };
 
-  const handleClearTopic = () => {
-    setTopic('');
+  const handleReset = (id: string) => {
+    setCustoms(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleDownload = () => {
-    if (generatedImage) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      
-      img.onload = () => {
-        canvas.width = img.width;
-        canvas.height = img.height;
-        
-        // Draw image
-        ctx?.drawImage(img, 0, 0);
-        
-        if (ctx && showWatermark) {
-            // Watermark configuration
-            const text = watermarkText;
-            const fontSize = Math.max(24, img.width * 0.04); // Responsive font size
-            ctx.font = `bold ${fontSize}px Inter, sans-serif`;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'bottom';
-            
-            // Add shadow for better visibility
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-            ctx.shadowBlur = 6;
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-            
-            // Padding from bottom right
-            const paddingX = img.width * 0.03;
-            const paddingY = img.height * 0.02;
-            
-            ctx.fillText(text, img.width - paddingX, img.height - paddingY);
-        }
-
-        // Trigger download
-        const link = document.createElement('a');
-        link.download = `${generatedImage.topic.replace(/\s+/g, '-').toLowerCase()}.png`;
-        link.href = canvas.toDataURL('image/png');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-      
-      img.src = generatedImage.url;
-    }
+  const handleDelete = (id: string) => {
+    setCustoms(prev => prev.filter(c => c.id !== id));
   };
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      // Optional: Add toast notification here
-    } catch (err) {
-      console.error('Failed to copy:', err);
-    }
-  };
+  const showForm = editing !== null || creating;
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] flex flex-col md:flex-row">
-      {needsApiKey && <ApiKeyPrompt onKeySelected={() => setNeedsApiKey(false)} />}
-
-      {/* Sidebar / Input Area */}
-      <div className="w-full md:w-1/3 lg:w-1/4 bg-[#222222] border-r border-[#333333] p-6 pb-0 flex flex-col shadow-lg z-10 h-screen md:h-screen md:sticky md:top-0 overflow-y-auto">
-        <header className="mb-6">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-2xl">📰</span>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-              News Regions
-            </h1>
-          </div>
-          <p className="text-sm text-slate-400 mb-4">
-            Новости регионов
-          </p>
-          
-          {/* Mode Switcher */}
-          <div className="flex p-1 bg-[#2a2a2a] rounded-lg border border-[#333333]">
-            <button
-              onClick={() => setActiveTab('infographic')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
-                activeTab === 'infographic' 
-                  ? 'bg-indigo-600 text-white shadow-sm' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Инфографика
-            </button>
-            <button
-              onClick={() => setActiveTab('rewrite')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
-                activeTab === 'rewrite' 
-                  ? 'bg-indigo-600 text-white shadow-sm' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Рерайт
-            </button>
-          </div>
-        </header>
-
-        {activeTab === 'infographic' ? (
-          <form onSubmit={handleSubmit} className="flex-grow flex flex-col gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="topic" className="block text-sm font-medium text-slate-300">
-                  Тема инфографики
-                </label>
-                {topic && (
-                  <button
-                    type="button"
-                    onClick={handleClearTopic}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
-                    title="Очистить поле"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    Очистить
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <textarea
-                  id="topic"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="Например: Как работает фотосинтез, Польза витамина C..."
-                  className="w-full h-24 p-4 bg-[#2a2a2a] border border-[#333333] rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-all text-slate-200 placeholder:text-slate-500 text-sm"
-                  disabled={isGenerating}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Стиль оформления
-              </label>
-              <div className="grid grid-cols-2 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1">
-                {INFOGRAPHIC_STYLES.map((style) => (
-                  <button
-                    key={style.id}
-                    type="button"
-                    onClick={() => setSelectedStyle(style)}
-                    disabled={isGenerating}
-                    className={`
-                      p-2 rounded-lg text-xs font-medium border flex items-center gap-2 transition-all text-left
-                      ${selectedStyle.id === style.id
-                        ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
-                        : 'bg-[#2a2a2a] border-[#333333] text-slate-400 hover:bg-[#333333] hover:text-slate-200'}
-                      ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}
-                  >
-                    <span className="text-base">{style.icon}</span>
-                    {style.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Модель генерации
-              </label>
-              <div className="grid grid-cols-1 gap-2">
-                {MODELS.map((model) => (
-                  <button
-                    key={model.id}
-                    type="button"
-                    onClick={() => setSelectedModel(model)}
-                    disabled={isGenerating}
-                    className={`
-                      p-2 rounded-lg text-xs font-medium border flex items-center gap-3 transition-all
-                      ${selectedModel.id === model.id
-                        ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
-                        : 'bg-[#2a2a2a] border-[#333333] text-slate-400 hover:bg-[#333333] hover:text-slate-200'}
-                      ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}
-                  >
-                    <span className="text-lg">{model.icon}</span>
-                    <div className="flex flex-col items-start">
-                      <span>{model.label}</span>
-                      <span className="text-[10px] opacity-60">{model.id}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-slate-300">
-                  Ватермарка
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowWatermark(!showWatermark)}
-                  className={`text-xs px-2 py-1 rounded transition-colors ${showWatermark ? 'bg-indigo-600 text-white' : 'bg-[#2a2a2a] text-slate-500'}`}
-                >
-                  {showWatermark ? 'Вкл' : 'Выкл'}
-                </button>
-              </div>
-              {showWatermark && (
-                <input
-                  type="text"
-                  value={watermarkText}
-                  onChange={(e) => setWatermarkText(e.target.value)}
-                  placeholder="Текст ватермарки..."
-                  disabled={isGenerating}
-                  className="w-full p-2 bg-[#2a2a2a] border border-[#333333] rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200 text-xs"
-                />
-              )}
-            </div>
-
-            <div>
-               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Формат изображения
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {ASPECT_RATIOS.map((ratio) => (
-                  <button
-                    key={ratio.id}
-                    type="button"
-                    onClick={() => setSelectedRatio(ratio)}
-                    disabled={isGenerating}
-                    className={`
-                      p-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-2 transition-all
-                      ${selectedRatio.id === ratio.id
-                        ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
-                        : 'bg-[#2a2a2a] border-[#333333] text-slate-400 hover:bg-[#333333] hover:text-slate-200'}
-                      ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}
-                    `}
-                  >
-                    <span className="text-lg">{ratio.icon}</span>
-                    <div className="flex flex-col items-start">
-                      <span>{ratio.label}</span>
-                      <span className="text-[10px] opacity-60">{ratio.id}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 pt-2 pb-6 bg-[#222222] z-20 mt-auto -mx-6 px-6 border-t border-[#333333] shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)]">
-              <button
-                type="submit"
-                disabled={!topic.trim() || isGenerating}
-                className={`
-                  w-full py-4 rounded-xl font-semibold shadow-md transition-all flex items-center justify-center gap-2
-                  ${!topic.trim() || isGenerating 
-                    ? 'bg-[#2a2a2a] text-slate-500 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'}
-                `}
-              >
-                {isGenerating ? (
-                  'Генерируем...'
-                ) : (
-                  <>
-                    <span>✨</span> Создать
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        ) : (
-          /* Rewrite Mode Sidebar */
-          <form onSubmit={handleRewriteSubmit} className="flex-grow flex flex-col gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="rewriteInput" className="block text-sm font-medium text-slate-300">
-                  Исходный текст
-                </label>
-                {rewriteInput && (
-                  <button
-                    type="button"
-                    onClick={() => setRewriteInput('')}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    Очистить
-                  </button>
-                )}
-              </div>
-              <textarea
-                id="rewriteInput"
-                value={rewriteInput}
-                onChange={(e) => setRewriteInput(e.target.value)}
-                placeholder="Вставьте текст, который нужно переписать..."
-                className="w-full h-64 p-4 bg-[#2a2a2a] border border-[#333333] rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-all text-slate-200 placeholder:text-slate-500 text-sm"
-                disabled={isGenerating}
-              />
-            </div>
-
-            <div className="sticky bottom-0 pt-2 pb-6 bg-[#222222] z-20 mt-auto -mx-6 px-6 border-t border-[#333333] shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)]">
-              <button
-                type="submit"
-                disabled={!rewriteInput.trim() || isGenerating}
-                className={`
-                  w-full py-4 rounded-xl font-semibold shadow-md transition-all flex items-center justify-center gap-2
-                  ${!rewriteInput.trim() || isGenerating 
-                    ? 'bg-[#2a2a2a] text-slate-500 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'}
-                `}
-              >
-                {isGenerating ? (
-                  'Переписываем...'
-                ) : (
-                  <>
-                    <span>📝</span> Переписать
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        )}
-
-        <div className="mt-8 pt-4 pb-6 border-t border-[#333333] text-xs text-center font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-          News Regions
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#222222] border border-[#333333] rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b border-[#333]">
+          <h2 className="text-xl font-bold text-slate-100">Управление стилями</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
-      </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
 
-      {/* Main Preview Area */}
-      <div className="flex-grow bg-[#1a1a1a] flex items-center justify-center p-4 md:p-8 overflow-y-auto">
-        <div className="w-full h-full max-w-4xl flex items-center justify-center">
-          
-          {/* Empty State */}
-          {!isGenerating && !generatedImage && !error && !rewriteOutput && (
-            <div className="text-center text-slate-500 max-w-md">
-              <div className="text-6xl mb-4 opacity-10">
-                {activeTab === 'infographic' ? '📊' : '📝'}
-              </div>
-              <h3 className="text-lg font-medium text-slate-400 mb-2">
-                {activeTab === 'infographic' ? 'Здесь появится ваша инфографика' : 'Здесь появится переписанный текст'}
-              </h3>
-              <p>
-                {activeTab === 'infographic' 
-                  ? 'Выберите тему, стиль и формат, затем нажмите кнопку создания.'
-                  : 'Вставьте текст в поле слева и нажмите "Переписать".'}
-              </p>
-            </div>
-          )}
-
-          {/* Loading State */}
-          {isGenerating && (
-            <div className="bg-[#222222] p-12 rounded-2xl shadow-sm border border-[#333333] flex flex-col items-center">
-              <LoadingSpinner />
-              {activeTab === 'infographic' ? (
-                <>
-                  <p className="text-slate-400 text-sm mt-4">Применяем стиль: {selectedStyle.label}</p>
-                  <p className="text-slate-500 text-xs mt-1">Формат: {selectedRatio.label}</p>
-                </>
-              ) : (
-                <p className="text-slate-400 text-sm mt-4">Анализируем и улучшаем текст...</p>
-              )}
-            </div>
-          )}
-
-          {/* Error State */}
-          {error && !isGenerating && (
-            <div className="bg-red-900/10 border border-red-900/30 rounded-xl p-6 text-center max-w-md">
-              <div className="text-red-500 text-3xl mb-3">⚠️</div>
-              <h3 className="text-red-400 font-medium mb-1">Ошибка</h3>
-              <p className="text-red-300 text-sm">{error}</p>
-              <button 
-                onClick={() => setError(null)}
-                className="mt-4 text-xs font-semibold text-red-400 hover:text-red-300 underline"
-              >
-                Закрыть
-              </button>
-            </div>
-          )}
-
-          {/* Infographic Result State */}
-          {activeTab === 'infographic' && generatedImage && !isGenerating && (
-            <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300 w-full">
-              <div className="relative group rounded-lg overflow-hidden shadow-2xl ring-1 ring-white/10 bg-[#222222] max-w-full inline-block">
-                 {/* Dynamic Aspect Ratio container constraints */}
-                 <img 
-                    src={generatedImage.url} 
-                    alt={`Инфографика на тему: ${generatedImage.topic}`}
-                    className="max-h-[80vh] w-auto object-contain bg-[#222222]"
-                    style={{ aspectRatio: generatedImage.aspectRatio ? generatedImage.aspectRatio.replace(':', '/') : '3/4' }}
-                 />
-                 
-                 {/* Watermark Overlay */}
-                 {showWatermark && (
-                   <div className="absolute bottom-[3%] right-[3%] text-white/90 font-bold text-xl drop-shadow-md pointer-events-none select-none" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
-                      {watermarkText}
-                   </div>
-                 )}
-
-                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
-              </div>
-
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={handleDownload}
-                  className="bg-[#222222] border border-[#333333] text-slate-300 px-6 py-2 rounded-full font-medium shadow-sm hover:bg-[#2a2a2a] hover:border-indigo-500/50 hover:text-indigo-400 transition-all flex items-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Скачать
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Rewrite Result State */}
-          {activeTab === 'rewrite' && rewriteOutput && !isGenerating && (
-            <div className="w-full max-w-2xl animate-in fade-in zoom-in duration-300">
-              <div className="bg-[#222222] border border-[#333333] rounded-2xl shadow-xl overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-[#333333] bg-[#2a2a2a]/50">
-                  <h3 className="font-medium text-slate-200 flex items-center gap-2">
-                    <span>✨</span> Результат
-                  </h3>
-                  <button
-                    onClick={() => copyToClipboard(rewriteOutput)}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-indigo-500/10"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    Копировать
-                  </button>
+          {/* Edit form */}
+          {showForm && (
+            <div className="bg-[#1a1a1a] border border-indigo-500/40 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-slate-200">{editing ? `Редактировать: ${editing.label}` : 'Новый стиль'}</p>
+              <div className="flex gap-3">
+                <div className="w-20">
+                  <label className="text-xs text-slate-400 block mb-1">Иконка</label>
+                  <input type="text" value={formIcon} onChange={e => setFormIcon(e.target.value)} maxLength={4}
+                    className="w-full px-2 py-2 bg-[#222] border border-[#555] rounded-lg text-white text-center text-xl focus:border-indigo-500 focus:outline-none" />
                 </div>
-                <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                  <p className="text-slate-300 leading-relaxed whitespace-pre-wrap text-base">
-                    {rewriteOutput}
-                  </p>
+                <div className="flex-1">
+                  <label className="text-xs text-slate-400 block mb-1">Название</label>
+                  <input type="text" value={formLabel} onChange={e => setFormLabel(e.target.value)} placeholder="Название стиля"
+                    className="w-full px-3 py-2 bg-[#222] border border-[#555] rounded-lg text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none text-sm" />
                 </div>
               </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Промпт стиля</label>
+                <textarea value={formPrompt} onChange={e => setFormPrompt(e.target.value)} placeholder="Опишите визуальный стиль на английском..."
+                  className="w-full px-3 py-2 bg-[#222] border border-[#555] rounded-lg text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none text-sm resize-none h-36" />
+              </div>
+              {formError && <p className="text-red-400 text-xs">{formError}</p>}
+              <div className="flex gap-2">
+                <button onClick={handleSaveForm} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors">Сохранить</button>
+                <button onClick={() => { setEditing(null); setCreating(false); }} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors">Отмена</button>
+              </div>
             </div>
           )}
 
+          {/* Built-in styles */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Встроенные стили ({BUILTIN_STYLES.length})</p>
+              <button onClick={openCreate} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-lg transition-colors">+ Новый стиль</button>
+            </div>
+            <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+              {mergedBuiltins.map(s => {
+                const modified = isOverridden(s.id);
+                return (
+                  <div key={s.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${modified ? 'bg-indigo-900/20 border border-indigo-500/20' : 'bg-[#1a1a1a]'}`}>
+                    <span className="text-sm text-slate-300 truncate mr-2">{s.icon} {s.label}{modified && <span className="ml-1 text-xs text-indigo-400">✎</span>}</span>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => openEdit(s)} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700 transition-colors">✏️</button>
+                      {modified && (
+                        <button onClick={() => handleReset(s.id)} className="text-xs text-yellow-500 hover:text-yellow-300 px-2 py-1 rounded hover:bg-yellow-900/30 transition-colors" title="Сбросить до оригинала">↺</button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Pure custom styles */}
+          {pureCustoms.length > 0 && (
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Мои стили ({pureCustoms.length})</p>
+              <div className="space-y-1">
+                {pureCustoms.map(s => (
+                  <div key={s.id} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-3 py-2">
+                    <span className="text-sm text-slate-300 truncate mr-2">{s.icon} {s.label}</span>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => openEdit(s)} className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700 transition-colors">✏️</button>
+                      <button onClick={() => handleDelete(s.id)} className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30 transition-colors">🗑️</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="p-6 border-t border-[#333] flex gap-3">
+          <button onClick={() => { onSave(customs); onClose(); }} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors">Применить</button>
+          <button onClick={onClose} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-colors">Закрыть</button>
         </div>
       </div>
     </div>
   );
 };
 
-export default App;
+// ─── Model Manager Modal ──────────────────────────────────────────────────────
+
+interface ModelManagerProps {
+  customModels: AIModel[];
+  onSave: (models: AIModel[]) => void;
+  onClose: () => void;
+}
+
+const ModelManager: React.FC<ModelManagerProps> = ({ customModels, onSave, onClose }) => {
+  const [models, setModels] = useState<AIModel[]>(customModels);
+  const [formLabel, setFormLabel] = useState('');
+  const [formModelId, setFormModelId] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const handleAdd = () => {
+    if (!formLabel.trim()) { setFormError('Введите название модели.'); return; }
+    if (!formModelId.trim()) { setFormError('Введите ID модели.'); return; }
+    setFormError('');
+    setModels(prev => [...prev, { id: `custom_${Date.now()}`, label: formLabel.trim(), model: formModelId.trim(), isCustom: true }]);
+    setFormLabel(''); setFormModelId('');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#222222] border border-[#333333] rounded-2xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-6 border-b border-[#333]">
+          <h2 className="text-xl font-bold text-slate-100">Управление моделями</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Встроенные модели</p>
+            <div className="space-y-1">
+              {DEFAULT_MODELS.map(m => (
+                <div key={m.id} className="bg-[#1a1a1a] rounded-lg px-3 py-2">
+                  <p className="text-sm text-slate-300">{m.label}</p>
+                  <p className="text-xs text-slate-500 font-mono">{m.model}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Мои модели</p>
+            {models.length === 0 && <p className="text-sm text-slate-500 text-center py-2">Нет добавленных моделей</p>}
+            <div className="space-y-1">
+              {models.map(m => (
+                <div key={m.id} className="flex items-center justify-between bg-[#1a1a1a] rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-sm text-slate-300">{m.label}</p>
+                    <p className="text-xs text-slate-500 font-mono">{m.model}</p>
+                  </div>
+                  <button onClick={() => setModels(prev => prev.filter(x => x.id !== m.id))} className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/30 transition-colors">🗑️</button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-[#1a1a1a] border border-[#444] rounded-xl p-4 space-y-3">
+            <p className="text-sm font-semibold text-slate-200">Добавить модель</p>
+            <input type="text" value={formLabel} onChange={e => setFormLabel(e.target.value)} placeholder="Название (напр.: My Custom Model)"
+              className="w-full px-3 py-2 bg-[#222] border border-[#555] rounded-lg text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none text-sm" />
+            <input type="text" value={formModelId} onChange={e => setFormModelId(e.target.value)} placeholder="ID модели (напр.: openai/gpt-4o)"
+              className="w-full px-3 py-2 bg-[#222] border border-[#555] rounded-lg text-white placeholder-slate-500 font-mono focus:border-indigo-500 focus:outline-none text-sm" />
+            {formError && <p className="text-red-400 text-xs">{formError}</p>}
+            <button onClick={handleAdd} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors">+ Добавить</button>
+          </div>
+        </div>
+        <div className="p-6 border-t border-[#333] flex gap-3">
+          <button onClick={() => { onSave(models); onClose(); }} className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors">Применить</button>
+          <button onClick={onClose} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-colors">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem('openrouter_api_key'));
+  const [customStyles, setCustomStyles] = useState<InfographicStyle[]>(loadCustomStyles);
+  const [customModels, setCustomModels] = useState<AIModel[]>(loadCustomModels);
+
+  // Built-ins overridden by any same-id custom, then pure customs appended
+  const styleOverrideMap = new Map(customStyles.map(s => [s.id, s]));
+  const allStyles = [
+    ...BUILTIN_STYLES.map(s => styleOverrideMap.get(s.id) ?? s),
+    ...customStyles.filter(c => !BUILTIN_STYLES.some(b => b.id === c.id)),
+  ];
+  const allModels = [...DEFAULT_MODELS, ...customModels];
+
+  const [selectedStyle, setSelectedStyle] = useState<InfographicStyle>(allStyles[0]);
+  const [selectedRatio, setSelectedRatio] = useState(ASPECT_RATIOS[0]);
+  const [selectedModel, setSelectedModel] = useState<AIModel>(allModels[0]);
+  const [userPrompt, setUserPrompt] = useState('');
+  const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const [activeTab, setActiveTab] = useState<'infographic' | 'rewrite'>('infographic');
+  const [rewriteInput, setRewriteInput] = useState('');
+  const [rewriteResult, setRewriteResult] = useState('');
+  const [rewriteLoading, setRewriteLoading] = useState(false);
+  const [rewriteError, setRewriteError] = useState('');
+
+  const [watermarkText, setWatermarkText] = useState('');
+  const [showWatermark, setShowWatermark] = useState(false);
+  const [watermarkPosition, setWatermarkPosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('bottom-right');
+  const [showStyleManager, setShowStyleManager] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleApiKeyChange = useCallback((key: string) => {
+    localStorage.setItem('openrouter_api_key', key);
+    setApiKey(key);
+  }, []);
+
+  const handleSaveCustomStyles = useCallback((styles: InfographicStyle[]) => {
+    setCustomStyles(styles);
+    saveCustomStyles(styles);
+    const updated = [...BUILTIN_STYLES, ...styles];
+    if (!updated.find(s => s.id === selectedStyle.id)) setSelectedStyle(updated[0]);
+  }, [selectedStyle.id]);
+
+  const handleSaveCustomModels = useCallback((models: AIModel[]) => {
+    setCustomModels(models);
+    saveCustomModels(models);
+    const updated = [...DEFAULT_MODELS, ...models];
+    if (!updated.find(m => m.id === selectedModel.id)) setSelectedModel(updated[0]);
+  }, [selectedModel.id]);
+
+  const handleGenerateInfographic = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!apiKey) return;
+    if (!userPrompt.trim()) { setError('Введите тему инфографики.'); return; }
+    setLoading(true); setError(''); setGeneratedImage(null);
+    try {
+      const imageData = await generateInfographic(apiKey, userPrompt, selectedStyle.prompt, selectedRatio.ratio, selectedModel.model, watermarkText, showWatermark, watermarkPosition);
+      setGeneratedImage({ url: imageData, topic: userPrompt, timestamp: Date.now(), aspectRatio: selectedRatio.ratio, base64: imageData });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось создать инфографику.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRewriteText = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!apiKey) return;
+    if (!rewriteInput.trim()) { setRewriteError('Введите текст для рерайта.'); return; }
+    setRewriteLoading(true); setRewriteError('');
+    try {
+      const result = await rewriteText(apiKey, rewriteInput);
+      setRewriteResult(result);
+    } catch (err) {
+      setRewriteError(err instanceof Error ? err.message : 'Не удалось переписать текст.');
+    } finally {
+      setRewriteLoading(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+  };
+
+  const handleDownloadImage = () => {
+    if (!generatedImage?.url) return;
+    const link = document.createElement('a');
+    link.href = generatedImage.url;
+    link.download = `infographic_${Date.now()}.png`;
+    link.click();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('openrouter_api_key');
+    setApiKey(null);
+  };
+
+  if (!apiKey) {
+    return <ApiKeyPrompt onApiKeyChange={handleApiKeyChange} />;
+  }
+
+  const modelIcons: Record<number, string> = { 0: '⚡', 1: '💎' };
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-[#1a1a1a] text-slate-200">
+      {showStyleManager && (
+        <StyleManager customStyles={customStyles} onSave={handleSaveCustomStyles} onClose={() => setShowStyleManager(false)} />
+      )}
+      {showModelManager && (
+        <ModelManager customModels={customModels} onSave={handleSaveCustomModels} onClose={() => setShowModelManager(false)} />
+      )}
+
+      {/* ── Sidebar ── */}
+      <div className="w-80 shrink-0 bg-[#222222] border-r border-[#333333] flex flex-col h-full overflow-hidden">
+        <div className="flex-1 overflow-y-auto px-4 pt-5 pb-2 space-y-4">
+
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                News Regions
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">Инфографика для постов</p>
+            </div>
+            <button onClick={handleLogout} title="Выйти" className="text-xs text-slate-500 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-[#2a2a2a] transition-colors">
+              🔑 Выйти
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex bg-[#2a2a2a] rounded-xl p-1 gap-1">
+            {(['infographic', 'rewrite'] as const).map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/40' : 'text-slate-400 hover:text-white'}`}>
+                {tab === 'infographic' ? '🖼️ Инфографика' : '✍️ Рерайт'}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Infographic tab ── */}
+          {activeTab === 'infographic' && (
+            <form onSubmit={handleGenerateInfographic} className="space-y-4">
+              {/* Prompt */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Тема инфографики</label>
+                  {userPrompt && (
+                    <button type="button" onClick={() => setUserPrompt('')} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">× Очистить</button>
+                  )}
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={userPrompt}
+                  onChange={e => setUserPrompt(e.target.value)}
+                  placeholder="Введите тему или событие..."
+                  className="w-full px-3 py-3 bg-[#1a1a1a] border border-[#333333] rounded-xl text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none resize-none h-24 text-sm"
+                />
+              </div>
+
+              {/* Style selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Стиль оформления</label>
+                  <button type="button" onClick={() => setShowStyleManager(true)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                    ⚙️ Управление
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                  {allStyles.map(style => (
+                    <button
+                      type="button"
+                      key={style.id}
+                      onClick={() => setSelectedStyle(style)}
+                      className={`px-3 py-2 rounded-xl text-sm text-left transition-all flex items-center gap-2 border ${
+                        selectedStyle.id === style.id
+                          ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
+                          : 'bg-[#1c1c1c] border-[#2a2a2a] text-slate-300 hover:border-[#3a3a3a] hover:text-white'
+                      }`}
+                    >
+                      <span className="text-base shrink-0">{style.icon}</span>
+                      <span className="truncate leading-tight text-xs">{style.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Model selection */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Модель</label>
+                  <button type="button" onClick={() => setShowModelManager(true)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                    ⚙️ Управление
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {allModels.map((model, idx) => (
+                    <button
+                      type="button"
+                      key={model.id}
+                      onClick={() => setSelectedModel(model)}
+                      className={`w-full px-3 py-2.5 rounded-xl text-sm text-left transition-all flex items-center gap-3 border ${
+                        selectedModel.id === model.id
+                          ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
+                          : 'bg-[#1c1c1c] border-[#2a2a2a] text-slate-300 hover:border-[#3a3a3a] hover:text-white'
+                      }`}
+                    >
+                      <span className="text-base shrink-0">{modelIcons[idx] ?? '🤖'}</span>
+                      <div className="min-w-0">
+                        <div className="font-medium text-xs">{model.label}</div>
+                        <div className="text-[10px] opacity-50 font-mono truncate">{model.model}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Watermark */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ватермарка</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowWatermark(!showWatermark)}
+                    className={`text-xs font-medium px-3 py-1 rounded-lg border transition-all ${
+                      showWatermark
+                        ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300'
+                        : 'bg-[#1c1c1c] border-[#333] text-slate-400 hover:text-white hover:border-[#444]'
+                    }`}
+                  >
+                    {showWatermark ? 'Вкл' : 'Выкл'}
+                  </button>
+                </div>
+                {showWatermark && (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={watermarkText}
+                      onChange={e => setWatermarkText(e.target.value)}
+                      placeholder="@yourhandle"
+                      className="w-full px-3 py-2 bg-[#1a1a1a] border border-[#333333] rounded-xl text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-1 w-32">
+                      {([
+                        { id: 'top-left',     label: '↖' },
+                        { id: 'top-right',    label: '↗' },
+                        { id: 'bottom-left',  label: '↙' },
+                        { id: 'bottom-right', label: '↘' },
+                      ] as const).map(pos => (
+                        <button
+                          type="button"
+                          key={pos.id}
+                          onClick={() => setWatermarkPosition(pos.id)}
+                          className={`py-1 rounded-lg text-sm font-bold transition-all border ${
+                            watermarkPosition === pos.id
+                              ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300'
+                              : 'bg-[#1c1c1c] border-[#2a2a2a] text-slate-400 hover:text-white hover:border-[#3a3a3a]'
+                          }`}
+                        >
+                          {pos.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Aspect ratio */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Формат</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {ASPECT_RATIOS.map(ratio => (
+                    <button
+                      type="button"
+                      key={ratio.id}
+                      onClick={() => setSelectedRatio(ratio)}
+                      className={`flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all border text-xs ${
+                        selectedRatio.id === ratio.id
+                          ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300 ring-1 ring-indigo-500/50'
+                          : 'bg-[#1c1c1c] border-[#2a2a2a] text-slate-400 hover:border-[#3a3a3a] hover:text-white'
+                      }`}
+                    >
+                      <span className="text-lg">{ratio.icon}</span>
+                      <span className="font-medium leading-tight">{ratio.id}</span>
+                      <span className="text-[10px] opacity-60">{ratio.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-900/30 border border-red-800/50 rounded-xl text-red-300 text-sm">{error}</div>
+              )}
+            </form>
+          )}
+
+          {/* ── Rewrite tab ── */}
+          {activeTab === 'rewrite' && (
+            <form onSubmit={handleRewriteText} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Исходный текст</label>
+                <textarea
+                  value={rewriteInput}
+                  onChange={e => setRewriteInput(e.target.value)}
+                  placeholder="Вставьте текст новости..."
+                  className="w-full px-3 py-3 bg-[#1a1a1a] border border-[#333333] rounded-xl text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none resize-none h-44 text-sm"
+                />
+              </div>
+              {rewriteError && (
+                <div className="p-3 bg-red-900/30 border border-red-800/50 rounded-xl text-red-300 text-sm">{rewriteError}</div>
+              )}
+              {rewriteResult && (
+                <div className="space-y-2">
+                  <div className="p-4 bg-[#1a1a1a] border border-[#333333] rounded-xl">
+                    <p className="text-xs text-slate-500 mb-2">Результат:</p>
+                    <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed">{rewriteResult}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(rewriteResult)}
+                    className="w-full py-2 px-4 bg-[#1a1a1a] text-slate-300 rounded-xl font-medium hover:bg-[#252525] transition-colors text-sm border border-[#333333]"
+                  >
+                    📋 Скопировать
+                  </button>
+                </div>
+              )}
+            </form>
+          )}
+        </div>
+
+        {/* Sticky Create Button */}
+        <div className="px-4 py-4 border-t border-[#333333] bg-[#222222]">
+          {activeTab === 'infographic' ? (
+            <button
+              onClick={() => handleGenerateInfographic()}
+              disabled={loading}
+              className="w-full py-3 px-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-500 disabled:bg-[#2a2a2a] disabled:text-slate-500 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-900/30 text-sm"
+            >
+              {loading ? '⏳ Генерирую...' : '✨ Создать'}
+            </button>
+          ) : (
+            <button
+              onClick={() => handleRewriteText()}
+              disabled={rewriteLoading}
+              className="w-full py-3 px-4 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-500 disabled:bg-[#2a2a2a] disabled:text-slate-500 disabled:cursor-not-allowed transition-all text-sm"
+            >
+              {rewriteLoading ? '⏳ Переписываю...' : '✍️ Рерайт'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Output panel ── */}
+      <div className="flex-1 bg-[#1a1a1a] h-full overflow-y-auto flex items-center justify-center p-8">
+        {activeTab === 'infographic' && (
+          <>
+            {loading && (
+              <div className="flex flex-col items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            )}
+            {!loading && generatedImage && (
+              <div className="flex flex-col items-center gap-5 w-full max-w-xl">
+                <img
+                  src={generatedImage.url}
+                  alt="Сгенерированная инфографика"
+                  className="w-full h-auto rounded-2xl shadow-2xl shadow-black/50"
+                />
+                <button
+                  onClick={handleDownloadImage}
+                  className="flex items-center gap-2 py-2.5 px-7 bg-[#222222] hover:bg-[#2a2a2a] text-slate-300 rounded-xl font-medium transition-colors text-sm border border-[#333333]"
+                >
+                  ⬇ Скачать
+                </button>
+              </div>
+            )}
+            {!loading && !generatedImage && (
+              <div className="text-center">
+                <div className="text-6xl mb-4 opacity-20">🖼️</div>
+                <p className="text-slate-600 text-sm">Введите тему и нажмите «✨ Создать»</p>
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === 'rewrite' && !rewriteResult && !rewriteLoading && (
+          <div className="text-center">
+            <div className="text-6xl mb-4 opacity-20">✍️</div>
+            <p className="text-slate-600 text-sm">Введите текст и нажмите «✍️ Рерайт»</p>
+          </div>
+        )}
+        {activeTab === 'rewrite' && rewriteLoading && (
+          <div className="flex flex-col items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
